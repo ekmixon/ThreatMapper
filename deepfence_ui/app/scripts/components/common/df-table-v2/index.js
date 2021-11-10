@@ -172,7 +172,6 @@ const DfTableV2 = ({
   name,
   loading
 }) => {
-
   defaultPageSize = getDefaultPageSize({
     showPagination,
     inputDefaultPageSize: defaultPageSize,
