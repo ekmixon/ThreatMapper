@@ -35,20 +35,14 @@ def validate_email(email_string: str) -> bool:
     """
     EMAIL_REGEX = re.compile(
         "^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
-    if EMAIL_REGEX.match(email_string):
-        return True
-    else:
-        return False
+    return bool(EMAIL_REGEX.match(email_string))
 
 
 def validate_port(port):
     if not port:
         return False
     regex = "^([1-9]|[1-5]?[0-9]{2,4}|6[1-4][0-9]{3}|65[1-4][0-9]{2}|655[1-2][0-9]|6553[1-5])$"
-    if re.search(regex, port):
-        return True
-    else:
-        return False
+    return bool(re.search(regex, port))
 
 
 def validate_domain(domain):
@@ -60,10 +54,7 @@ def validate_domain(domain):
         domain = domain_split[0]
         if not validate_port(domain_split[1]):
             return False
-    if re.search(regex, domain):
-        return True
-    else:
-        return False
+    return bool(re.search(regex, domain))
 
 
 def validate_ip(ip_address):
@@ -75,10 +66,7 @@ def validate_ip(ip_address):
         ip_address = ip_address_split[0]
         if not validate_port(ip_address_split[1]):
             return False
-    if re.search(regex, ip_address):
-        return True
-    else:
-        return False
+    return bool(re.search(regex, ip_address))
 
 
 def get_recent_scan_ids(number, time_unit, lucene_query_string, filters_cve_scan=None):
@@ -106,11 +94,13 @@ def get_recent_scan_ids(number, time_unit, lucene_query_string, filters_cve_scan
     cve_scan_aggs_response = ESConn.aggregation_helper(
         CVE_SCAN_LOGS_INDEX, filters_cve_scan, cve_scan_aggs, number, TIME_UNIT_MAPPING.get(time_unit),
         lucene_query_string, add_masked_filter=False)
-    recent_scan_ids = []
-    for node_id_bkt in cve_scan_aggs_response.get("aggregations", {}).get("node_id", {}).get("buckets", []):
-        if node_id_bkt.get("docs", {}).get("hits", {}).get("hits", []):
-            recent_scan_ids.append(node_id_bkt["docs"]["hits"]["hits"][0]["_source"]["scan_id"])
-    return recent_scan_ids
+    return [
+        node_id_bkt["docs"]["hits"]["hits"][0]["_source"]["scan_id"]
+        for node_id_bkt in cve_scan_aggs_response.get("aggregations", {})
+        .get("node_id", {})
+        .get("buckets", [])
+        if node_id_bkt.get("docs", {}).get("hits", {}).get("hits", [])
+    ]
 
 
 def call_scope_get_api(url):
@@ -138,7 +128,9 @@ def split_list_into_chunks(my_list: list, size: int) -> list:
 
 
 def get_cve_scan_tmp_folder(host_name, scan_id):
-    return "/data/cve-scan-upload/" + host_name + "/" + scan_id.replace("/", "_").replace(":", "_").replace(".", "_")
+    return f"/data/cve-scan-upload/{host_name}/" + scan_id.replace(
+        "/", "_"
+    ).replace(":", "_").replace(".", "_")
 
 
 def rmdir_recursive(path):
@@ -212,18 +204,25 @@ def get_process_ids_for_pod(pod_scope_id):
     for pod_child in pod_children_details:
         if str(pod_child["label"]).lower() == TOPOLOGY_ID_PROCESS:
             for process_details in pod_child.get("nodes", []):
-                for metadata in process_details.get("metadata", []):
-                    if metadata["id"] == "pid":
-                        process_ids.append(metadata["value"])
+                process_ids.extend(
+                    metadata["value"]
+                    for metadata in process_details.get("metadata", [])
+                    if metadata["id"] == "pid"
+                )
+
     return process_ids
 
 
 def get_node_details_for_scope_id(topology_id_scope_id_tuple):
     # [(topology_id, scope_id), (topology_id, scope_id)]
-    node_detail_ips = []
-    for topology_id_scope_id in topology_id_scope_id_tuple:
-        node_detail_ips.append(
-            SCOPE_NODE_DETAIL_API_URL.format(topology_id=topology_id_scope_id[0], scope_id=topology_id_scope_id[1]))
+    node_detail_ips = [
+        SCOPE_NODE_DETAIL_API_URL.format(
+            topology_id=topology_id_scope_id[0],
+            scope_id=topology_id_scope_id[1],
+        )
+        for topology_id_scope_id in topology_id_scope_id_tuple
+    ]
+
     return async_http_get(node_detail_ips)
 
 
@@ -233,14 +232,14 @@ def async_http_get(urlList):
     if urlListLen == 0:
         return output
     pidList = []
-    for i in range(0, urlListLen):
+    for i in range(urlListLen):
         cmdLine = ["/usr/bin/curl", "-L", "-k", "-s", "-S", urlList[i]]
         try:
             pidVal = Popen(cmdLine, stdin=PIPE, stdout=PIPE, shell=False)
             pidList.append(pidVal)
         except:
             pidList.append("")
-    for i in range(0, urlListLen):
+    for i in range(urlListLen):
         pidVal = pidList[i]
         if not pidVal:
             output.insert(i, "")
@@ -262,7 +261,7 @@ def async_http_post(url_data_list):
     if not url_data_list:
         return output
     pid_list = []
-    for i in range(0, len(url_data_list)):
+    for i in range(len(url_data_list)):
         cmd_line = ["/usr/bin/curl", "-L", "-k", "-s", "-S", "-X", "POST",
                     "-d", url_data_list[i][1], url_data_list[i][0]]
         # print(" ".join(cmd_line))
@@ -272,7 +271,7 @@ def async_http_post(url_data_list):
         except:
             output[url_data_list[i][0]] = ""
             pid_list.append("")
-    for i in range(0, len(url_data_list)):
+    for i in range(len(url_data_list)):
         pid_val = pid_list[i]
         if not pid_val:
             output[url_data_list[i][0]] = ""
@@ -295,7 +294,7 @@ def parse_query_param(param_str):
 
 def get_random_string(length):
     letters = string.ascii_lowercase
-    return ''.join(random.choice(letters) for i in range(length))
+    return ''.join(random.choice(letters) for _ in range(length))
 
 
 def websocketio_channel_name_format(node_type):
@@ -307,18 +306,20 @@ def websocketio_channel_name_format(node_type):
     """
     format = deepfence | scope
     """
-    if "format" in options:
-        if options["format"] not in ["deepfence", "scope"]:
-            options["format"] = "deepfence"
-    else:
+    if (
+        "format" in options
+        and options["format"] not in ["deepfence", "scope"]
+        or "format" not in options
+    ):
         options["format"] = "deepfence"
     """
     pseudo = show | hide
     """
-    if "pseudo" in options:
-        if options["pseudo"] not in ["show", "hide"]:
-            options["pseudo"] = "show"
-    else:
+    if (
+        "pseudo" in options
+        and options["pseudo"] not in ["show", "hide"]
+        or "pseudo" not in options
+    ):
         options["pseudo"] = "show"
     """
     stopped = both | running | stopped
@@ -338,20 +339,21 @@ def websocketio_channel_name_format(node_type):
     """
     unconnected = show | hide
     """
-    if "unconnected" in options:
-        if options["unconnected"] not in ["show", "hide"]:
-            options["unconnected"] = "show"
-    else:
+    if (
+        "unconnected" in options
+        and options["unconnected"] not in ["show", "hide"]
+        or "unconnected" not in options
+    ):
         options["unconnected"] = "show"
     """
     k8s storage = show | hide
     """
-    if "storage" in options:
-        if options["storage"] not in ["show", "hide"]:
-            options["storage"] = "show"
-    else:
+    if (
+        "storage" in options
+        and options["storage"] not in ["show", "hide"]
+        or "storage" not in options
+    ):
         options["storage"] = "show"
-
     if node_type == NODE_TYPE_HOST:
         channel = "{0}?format={1}".format(node_type, options["format"])
     elif node_type == NODE_TYPE_CONTAINER:
@@ -372,7 +374,11 @@ def websocketio_channel_name_format(node_type):
     elif node_type == NODE_TYPE_POD:
         channel = "{0}?namespace={1}&pseudo={2}&format={3}".format(
             node_type, options["namespace"], options["pseudo"], options["format"])
-    elif node_type == NODE_TYPE_KUBE_CONTROLLER or node_type == NODE_TYPE_KUBE_SERVICE or node_type == NODE_TYPE_SWARM_SERVICE:
+    elif node_type in [
+        NODE_TYPE_KUBE_CONTROLLER,
+        NODE_TYPE_KUBE_SERVICE,
+        NODE_TYPE_SWARM_SERVICE,
+    ]:
         channel = "{0}?namespace={1}&pseudo={2}&format={3}".format(node_type, options["namespace"], options["pseudo"],
                                                                    options["format"])
     else:
@@ -412,11 +418,18 @@ def validateJiraCredentials(siteurl, username, password, api_token, projectkey, 
             if not session:
                 raise JIRAError(text="Invalid Credentials")
 
-        if not api_token:
-            jclient = JIRA(siteurl, auth=(username, password,), max_retries=0)
-        else:
-            jclient = JIRA(siteurl, basic_auth=(
-                username, api_token), max_retries=0)
+        jclient = (
+            JIRA(siteurl, basic_auth=(username, api_token), max_retries=0)
+            if api_token
+            else JIRA(
+                siteurl,
+                auth=(
+                    username,
+                    password,
+                ),
+                max_retries=0,
+            )
+        )
 
         # validating project key
         jclient.project(projectkey)
@@ -498,8 +511,7 @@ def printable(input_bytes):
     input_str = input_bytes.decode('utf-8', errors='ignore')
     condition = set(string.printable)
     input_list = list(filter(lambda x: x in condition, input_str))
-    output_str = "".join(input_list)
-    return output_str
+    return "".join(input_list)
 
 
 def pretty_date(time=False):
@@ -626,7 +638,7 @@ def store_vulnerability_log(filename, logs):
 
     # create folder if not exists
     mkdir_recursive(log_path)
-    filepath = log_path + "/" + remove_special_char_str(filename) + ".log"
+    filepath = f"{log_path}/{remove_special_char_str(filename)}.log"
     create_file_if_not_exists(filepath)
     all_str_append_to_file(filepath, logs)
 
@@ -654,8 +666,8 @@ def get_all_scanned_node() -> list:
     }
     scanned_node = ESConn.search([CVE_INDEX], query_agg, 0, 0)
 
-    host_names = []
-    for datum in scanned_node['aggregations']['all_hosts']['buckets']:
-        if datum.get('key'):
-            host_names.append(datum.get('key'))
-    return host_names
+    return [
+        datum.get('key')
+        for datum in scanned_node['aggregations']['all_hosts']['buckets']
+        if datum.get('key')
+    ]

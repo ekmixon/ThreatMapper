@@ -31,8 +31,7 @@ import eventlet
 resource_api = Blueprint("resource_api", __name__)
 
 
-@resource_api.route("/node/<path:node_id>/" + constants.NODE_ACTION_ADD_TAGS, methods=["POST"],
-                    endpoint="api_v1_5_add_tags")
+@resource_api.route(f"/node/<path:node_id>/{constants.NODE_ACTION_ADD_TAGS}", methods=["POST"], endpoint="api_v1_5_add_tags")
 @jwt_required
 @non_read_only_user
 def add_tags(node_id):
@@ -88,28 +87,28 @@ def add_tags(node_id):
         if not request.is_json:
             raise InvalidUsage("Missing JSON post data in request")
         node = Node.get_node(node_id, request.args.get("scope_id", None), request.args.get("node_type", None))
-        if node.type == constants.NODE_TYPE_HOST or node.type == constants.NODE_TYPE_CONTAINER or \
-                node.type == constants.NODE_TYPE_CONTAINER_IMAGE:
-            post_data = request.json
-            if not post_data:
-                post_data = {}
-            tags = post_data.get('user_defined_tags', [])
-            if type(tags) != list:
-                raise InvalidUsage("user_defined_tags must be of list type")
-            tmp_tags = []
-            for tag in tags:
-                if tag:
-                    tmp_tags.append(tag)
-            tags = tmp_tags
-            if not tags:
-                raise InvalidUsage("user_defined_tags must be of list type")
-            set_node_tags_in_db(node, tags, "add_tags")
-            return set_response(data=node.set_tags(tags, "add_user_defined_tags"))
-        else:
+        if node.type not in [
+            constants.NODE_TYPE_HOST,
+            constants.NODE_TYPE_CONTAINER,
+            constants.NODE_TYPE_CONTAINER_IMAGE,
+        ]:
             raise InvalidUsage(
                 "Control '{0}' not applicable for node type '{1}'".format(constants.NODE_ACTION_ADD_TAGS, node.type))
+        post_data = request.json or {}
+        tags = post_data.get('user_defined_tags', [])
+        if type(tags) != list:
+            raise InvalidUsage("user_defined_tags must be of list type")
+        tmp_tags = [tag for tag in tags if tag]
+        tags = tmp_tags
+        if not tags:
+            raise InvalidUsage("user_defined_tags must be of list type")
+        set_node_tags_in_db(node, tags, "add_tags")
+        return set_response(data=node.set_tags(tags, "add_user_defined_tags"))
     except DFError as err:
-        current_app.logger.error("NodeView: action={}; error={}".format(constants.NODE_ACTION_ADD_TAGS, err))
+        current_app.logger.error(
+            f"NodeView: action={constants.NODE_ACTION_ADD_TAGS}; error={err}"
+        )
+
         raise InvalidUsage(err.message)
     except Exception as ex:
         raise InternalError(str(ex))
@@ -136,9 +135,13 @@ def set_node_tags_in_db(node, tags, action):
             present_tags = str(node_tag.tags).split(",")
     elif node.type == constants.NODE_TYPE_CONTAINER_IMAGE:
         node_name = node.image_name_tag
-        for parent in node.node_details_formatted.get("parents", []):
-            if parent.get("type", "") == constants.NODE_TYPE_HOST and parent.get("label", ""):
-                image_parent_host_names.append(parent["label"])
+        image_parent_host_names.extend(
+            parent["label"]
+            for parent in node.node_details_formatted.get("parents", [])
+            if parent.get("type", "") == constants.NODE_TYPE_HOST
+            and parent.get("label", "")
+        )
+
         node_tags_list = NodeTags.query.filter(NodeTags.host_name.in_(image_parent_host_names),
                                                NodeTags.node_name == node_name, NodeTags.node_type == node.type).all()
         if node_tags_list:
@@ -153,7 +156,10 @@ def set_node_tags_in_db(node, tags, action):
                 present_tags.remove(tag)
 
     if present_tags:
-        if node.type == constants.NODE_TYPE_HOST or node.type == constants.NODE_TYPE_CONTAINER:
+        if node.type in [
+            constants.NODE_TYPE_HOST,
+            constants.NODE_TYPE_CONTAINER,
+        ]:
             if not node_tag:
                 node_tag = NodeTags(host_name=node.host_name, node_name=node_name, node_type=node.type)
             node_tag.tags = ",".join(present_tags)
@@ -163,13 +169,10 @@ def set_node_tags_in_db(node, tags, action):
             for parent_host_name in image_parent_host_names:
                 if parent_host_name in host_node_tag_map:
                     node_tag = host_node_tag_map[parent_host_name]
-                    node_tag.tags = ",".join(present_tags)
-                    node_tag.save()
                 else:
                     node_tag = NodeTags(host_name=parent_host_name, node_name=node_name, node_type=node.type)
-                    node_tag.tags = ",".join(present_tags)
-                    node_tag.save()
-
+                node_tag.tags = ",".join(present_tags)
+                node_tag.save()
     else:
         if node_tag:
             node_tag.delete()
@@ -178,8 +181,7 @@ def set_node_tags_in_db(node, tags, action):
                 node_tag.delete()
 
 
-@resource_api.route("/node/<path:node_id>/" + constants.NODE_ACTION_DELETE_TAGS, methods=["POST"],
-                    endpoint="api_v1_5_delete_tags")
+@resource_api.route(f"/node/<path:node_id>/{constants.NODE_ACTION_DELETE_TAGS}", methods=["POST"], endpoint="api_v1_5_delete_tags")
 @jwt_required
 @non_read_only_user
 def delete_tags(node_id):
@@ -235,28 +237,28 @@ def delete_tags(node_id):
         if not request.is_json:
             raise InvalidUsage("Missing JSON post data in request")
         node = Node.get_node(node_id, request.args.get("scope_id", None), request.args.get("node_type", None))
-        if node.type == constants.NODE_TYPE_HOST or node.type == constants.NODE_TYPE_CONTAINER or \
-                node.type == constants.NODE_TYPE_CONTAINER_IMAGE:
-            post_data = request.json
-            if not post_data:
-                post_data = {}
-            tags = post_data.get('user_defined_tags', [])
-            if type(tags) != list:
-                raise InvalidUsage("user_defined_tags must be of list type")
-            tmp_tags = []
-            for tag in tags:
-                if tag:
-                    tmp_tags.append(tag)
-            tags = tmp_tags
-            if not tags:
-                raise InvalidUsage("user_defined_tags must be of list type")
-            set_node_tags_in_db(node, tags, "delete_tags")
-            return set_response(data=node.set_tags(tags, "delete_user_defined_tags"))
-        else:
+        if node.type not in [
+            constants.NODE_TYPE_HOST,
+            constants.NODE_TYPE_CONTAINER,
+            constants.NODE_TYPE_CONTAINER_IMAGE,
+        ]:
             raise InvalidUsage(
                 "Control '{0}' not applicable for node type '{1}'".format(constants.NODE_ACTION_DELETE_TAGS, node.type))
+        post_data = request.json or {}
+        tags = post_data.get('user_defined_tags', [])
+        if type(tags) != list:
+            raise InvalidUsage("user_defined_tags must be of list type")
+        tmp_tags = [tag for tag in tags if tag]
+        tags = tmp_tags
+        if not tags:
+            raise InvalidUsage("user_defined_tags must be of list type")
+        set_node_tags_in_db(node, tags, "delete_tags")
+        return set_response(data=node.set_tags(tags, "delete_user_defined_tags"))
     except DFError as err:
-        current_app.logger.error("NodeView: action={}; error={}".format(constants.NODE_ACTION_DELETE_TAGS, err))
+        current_app.logger.error(
+            f"NodeView: action={constants.NODE_ACTION_DELETE_TAGS}; error={err}"
+        )
+
         raise InvalidUsage(err.message)
     except Exception as ex:
         raise InternalError(str(ex))

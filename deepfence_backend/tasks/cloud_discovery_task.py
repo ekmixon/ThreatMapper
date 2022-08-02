@@ -108,7 +108,7 @@ def fetch_vm_resources(cloud_discovery, cloud_provider):
             }
             scope_id = host_name + ";\u003chost\u003e"
             if vm_data.get("tags", {}) is not None:
-                cloud_tags = [k + ":" + v for k, v in vm_data.get("tags", {}).items()]
+                cloud_tags = [f"{k}:{v}" for k, v in vm_data.get("tags", {}).items()]
         vm_report = {
             "id": scope_id, "topology": "host", "counters": None,
             "sets": {"local_networks": local_networks}, "latestControls": {},
@@ -143,11 +143,9 @@ def fetch_vm_resources(cloud_discovery, cloud_provider):
 def send_cloud_report():
     while True:
         _, _, _ = select.select([], [], [], 5)
-        cloud_report = redis.get(cloud_report_key)
-        if not cloud_report:
-            continue
-        requests.post("http://deepfence-topology:8004/topology-api/report", data=cloud_report,
-                      headers={"Content-type": "application/json"})
+        if cloud_report := redis.get(cloud_report_key):
+            requests.post("http://deepfence-topology:8004/topology-api/report", data=cloud_report,
+                          headers={"Content-type": "application/json"})
 
 
 def fetch_cloud_resources():

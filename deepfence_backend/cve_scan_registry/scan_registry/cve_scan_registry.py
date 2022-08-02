@@ -43,13 +43,11 @@ class DFError(Exception):
         self.message = message
         self.code = code
         self.error = error
-        msg = "DFError: {}".format(message)
+        msg = f"DFError: {message}"
         if code:
-            msg = "DFError: {}:{}".format(message, code)
+            msg = f"DFError: {message}:{code}"
         elif error:
-            msg = "DFError: {} => {}".format(message, error)
-        elif code and error:
-            msg = "DFError: {}:{} => {}".format(message, code, error)
+            msg = f"DFError: {message} => {error}"
         super(DFError, self).__init__(msg)
 
 
@@ -88,26 +86,25 @@ class CveScanRegistryImages:
     def check_registry_client_cert(self):
         registry_certs_dir = certs_dir + self.docker_registry_name
         if os.path.isdir(registry_certs_dir):
-            if os.path.exists(registry_certs_dir + "/" + "client.cert"):
-                self.client_cert_file_name = registry_certs_dir + "/" + "client.cert"
-            if os.path.exists(registry_certs_dir + "/" + "client.key"):
-                self.client_key_file_name = registry_certs_dir + "/" + "client.key"
-            if os.path.exists(registry_certs_dir + "/" + "ca.crt"):
-                self.ca_cert_file_name = registry_certs_dir + "/" + "ca.crt"
+            if os.path.exists(f"{registry_certs_dir}/client.cert"):
+                self.client_cert_file_name = f"{registry_certs_dir}/client.cert"
+            if os.path.exists(f"{registry_certs_dir}/client.key"):
+                self.client_key_file_name = f"{registry_certs_dir}/client.key"
+            if os.path.exists(f"{registry_certs_dir}/ca.crt"):
+                self.ca_cert_file_name = f"{registry_certs_dir}/ca.crt"
 
     def get_images_list(self, filter_image_name="", filter_image_tag="", filter_image_name_with_tag="",
                         filter_past_days=max_days):
         pass
 
     def get_self_signed_certs(self):
-        verify = True
-        if self.ca_cert_file_name:
-            verify = self.ca_cert_file_name
+        verify = self.ca_cert_file_name or True
         cert = None
-        if self.client_cert_file_name and self.client_key_file_name:
-            cert = (self.client_cert_file_name, self.client_key_file_name)
-        elif self.client_cert_file_name:
-            cert = self.client_cert_file_name
+        if self.client_cert_file_name:
+            if self.client_key_file_name:
+                cert = (self.client_cert_file_name, self.client_key_file_name)
+            else:
+                cert = self.client_cert_file_name
         return verify, cert
 
     def user_select_images(self, image_details_list, is_interactive=True):
@@ -128,12 +125,11 @@ class CveScanRegistryImages:
             user_input = input("-->").split(",")
             if "all" in user_input:
                 return images_list
-            else:
-                for user_input_no in user_input:
-                    try:
-                        images_list_selected.append(images_list[int(user_input_no) - 1])
-                    except:
-                        pass
+            for user_input_no in user_input:
+                try:
+                    images_list_selected.append(images_list[int(user_input_no) - 1])
+                except:
+                    pass
             return images_list_selected
         return images_list
 
@@ -144,7 +140,12 @@ class CveScanRegistryImages:
         pid_list = []
         for img in images_list:
             del_img = img["image_name_with_tag"]
-            image_path = get_tmp_path(del_img + "_" + self.datetime_now.strftime("%Y-%m-%dT%H:%M:%S") + ".000")
+            image_path = get_tmp_path(
+                f"{del_img}_"
+                + self.datetime_now.strftime("%Y-%m-%dT%H:%M:%S")
+                + ".000"
+            )
+
             try:
                 shutil.rmtree(image_path, ignore_errors=True)
             except:
@@ -153,24 +154,30 @@ class CveScanRegistryImages:
             pid_val.communicate()
 
     def get_repo_path_for_windows_images(self, image_name_with_tag):
-        if self.registry_type == REGISTRY_TYPE_DOCKER_HUB:
-            # {0}/{1}:{2}
-            registry_url = "registry-1.docker.io"
-            split_img_name = image_name_with_tag.split("/")
-            repository_name = split_img_name[0]
-            if not repository_name:
-                return {}
-            split_image = split_img_name[1].split(":")
-            image = split_image[0]
-            if not image:
-                return {}
-            tag = split_image[1]
-            if not tag:
-                tag = "latest"
-            return {"full_registry_image_name": registry_url + "/" + repository_name + "/" + image + ":" + tag,
-                    "image_layer_file": "/tmp" + "/" + repository_name + "_" + image + ".tar"}
-        else:
+        if self.registry_type != REGISTRY_TYPE_DOCKER_HUB:
             return {}
+        # {0}/{1}:{2}
+        registry_url = "registry-1.docker.io"
+        split_img_name = image_name_with_tag.split("/")
+        repository_name = split_img_name[0]
+        if not repository_name:
+            return {}
+        split_image = split_img_name[1].split(":")
+        image = split_image[0]
+        if not image:
+            return {}
+        tag = split_image[1]
+        if not tag:
+            tag = "latest"
+        return {
+            "full_registry_image_name": f"{registry_url}/{repository_name}/{image}:{tag}",
+            "image_layer_file": "/tmp"
+            + "/"
+            + repository_name
+            + "_"
+            + image
+            + ".tar",
+        }
 
     def scan_images(self, images_list):
         if not images_list:
@@ -181,8 +188,15 @@ class CveScanRegistryImages:
         else:
             # Download dependency data once
             img_name = images_list[0]["image_name_with_tag"]
-            image_path = get_tmp_path(
-                img_name + "_" + self.datetime_now.strftime("%Y-%m-%dT%H:%M:%S") + ".000") + "/layers.tar"
+            image_path = (
+                get_tmp_path(
+                    f"{img_name}_"
+                    + self.datetime_now.strftime("%Y-%m-%dT%H:%M:%S")
+                    + ".000"
+                )
+                + "/layers.tar"
+            )
+
             cmd_line = "{0} -mgmt-console-url='{1}' -scan-type='{2}' -image-name='{3}' -scan-id='{4}' -image-path='{5}' -deepfence-key='{6}' -update-dependency-data='{7}' -is-image-local='{8}'".format(
                 audit_file, self.mgmt_console_url, self.scan_type, img_name, self.scan_id, image_path,
                 self.deepfence_key, self.update_dependency_data, self.is_image_local)
@@ -199,8 +213,15 @@ class CveScanRegistryImages:
             pid_list = []
             for img in img_list:
                 img_name = img["image_name_with_tag"]
-                image_path = get_tmp_path(
-                    img_name + "_" + self.datetime_now.strftime("%Y-%m-%dT%H:%M:%S") + ".000") + "/layers.tar"
+                image_path = (
+                    get_tmp_path(
+                        f"{img_name}_"
+                        + self.datetime_now.strftime("%Y-%m-%dT%H:%M:%S")
+                        + ".000"
+                    )
+                    + "/layers.tar"
+                )
+
                 cmd_line = "{0} -mgmt-console-url='{1}' -scan-type='{2}' -image-name='{3}' -scan-id='{4}' -image-path='{5}' -deepfence-key='{6}' -update-dependency-data='{7}' -is-image-local='{8}'".format(
                     audit_file, self.mgmt_console_url, self.scan_type, img_name, self.scan_id, image_path,
                     self.deepfence_key, self.update_dependency_data, self.is_image_local)
@@ -227,10 +248,23 @@ class CveScanRegistryImages:
         pid_list = []
         for img in images_list:
             img_name = img["image_name_with_tag"]
-            save_path = get_tmp_path(img_name + "_" + self.datetime_now.strftime("%Y-%m-%dT%H:%M:%S") + ".000")
+            save_path = get_tmp_path(
+                f"{img_name}_"
+                + self.datetime_now.strftime("%Y-%m-%dT%H:%M:%S")
+                + ".000"
+            )
+
             mkdir_recursive(save_path)
-            cmd_line = ["skopeo", "--insecure-policy", "copy", "--authfile", self.docker_config_file,
-                        "docker://{}".format(img_name), "docker-archive://{}/layers.tar".format(save_path)]
+            cmd_line = [
+                "skopeo",
+                "--insecure-policy",
+                "copy",
+                "--authfile",
+                self.docker_config_file,
+                f"docker://{img_name}",
+                f"docker-archive://{save_path}/layers.tar",
+            ]
+
             pid_val = Popen(cmd_line, stdin=PIPE, stdout=PIPE, shell=False)
             pid_list.append(pid_val)
         for pid_val in pid_list:
@@ -259,7 +293,7 @@ class CveScanECRImages(CveScanRegistryImages):
                 REGISTRY_TYPE_ECR, aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key,
                 region_name=aws_region_name)
         self.registry_type = REGISTRY_TYPE_ECR
-        self.registry_id = registry_id if registry_id else None
+        self.registry_id = registry_id or None
         self.docker_config_path = docker_config_path_prefix + REGISTRY_TYPE_ECR
         self.docker_config_file = "{0}/{1}".format(self.docker_config_path, config_json)
         mkdir_recursive(self.docker_config_path)
@@ -284,8 +318,7 @@ class CveScanECRImages(CveScanRegistryImages):
                     if not response_list_repo_paginator['repositories']:
                         done = True
                         break
-                    for repo in response_list_repo_paginator['repositories']:
-                        repo_list.append(repo)
+                    repo_list.extend(iter(response_list_repo_paginator['repositories']))
                     if response_list_repo_paginator.get("nextToken"):
                         next_token = response_list_repo_paginator["nextToken"]
                     else:
@@ -314,22 +347,33 @@ class CveScanECRImages(CveScanRegistryImages):
                         for image_detail in response_describe_image_paginator["imageDetails"]:
                             if not image_detail.get("imageTags"):
                                 continue
-                            if filter_image_name:
-                                if filter_image_name not in repo["repositoryUri"]:
-                                    continue
-                            if filter_past_days and filter_past_days != max_days and filter_past_days > 0:
-                                if image_detail.get("imagePushedAt", None):
-                                    if image_from_date > image_detail["imagePushedAt"]:
-                                        continue
+                            if (
+                                filter_image_name
+                                and filter_image_name not in repo["repositoryUri"]
+                            ):
+                                continue
+                            if (
+                                filter_past_days
+                                and filter_past_days != max_days
+                                and filter_past_days > 0
+                                and image_detail.get("imagePushedAt", None)
+                                and image_from_date > image_detail["imagePushedAt"]
+                            ):
+                                continue
                             for tag in image_detail["imageTags"]:
                                 try:
-                                    if filter_image_tag:
-                                        if filter_image_tag != tag:
-                                            continue
+                                    if (
+                                        filter_image_tag
+                                        and filter_image_tag != tag
+                                    ):
+                                        continue
                                     image_name_with_tag = "{0}:{1}".format(repo["repositoryUri"], tag)
-                                    if filter_image_name_with_tag:
-                                        if filter_image_name_with_tag != image_name_with_tag:
-                                            continue
+                                    if (
+                                        filter_image_name_with_tag
+                                        and filter_image_name_with_tag
+                                        != image_name_with_tag
+                                    ):
+                                        continue
                                     image_details = {
                                         "image_name": repo["repositoryName"], "image_tag": tag, "image_os": "",
                                         "docker_image_size": bytes_to_str(image_detail["imageSizeInBytes"], "m"),
@@ -365,11 +409,9 @@ class CveScanECRImages(CveScanRegistryImages):
     def validate(self):
         if self.use_iam_role == "true":
             if not self.aws_region_name:
-                if not self.aws_region_name:
-                    raise DFError('region is required for iam role')
-        else:
-            if not self.aws_access_key_id or not self.aws_secret_access_key or not self.aws_region_name:
-                raise DFError('access key, secret key and region is required')
+                raise DFError('region is required for iam role')
+        elif not self.aws_access_key_id or not self.aws_secret_access_key or not self.aws_region_name:
+            raise DFError('access key, secret key and region is required')
         token = None
         try:
             if self.registry_id:
@@ -378,7 +420,10 @@ class CveScanECRImages(CveScanRegistryImages):
                 token = self.ecr_client.get_authorization_token()
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "")
-            if error_code == "InvalidSignatureException" or error_code == "UnrecognizedClientException":
+            if error_code in [
+                "InvalidSignatureException",
+                "UnrecognizedClientException",
+            ]:
                 return False
             if error_code == "AccessDeniedException":
                 raise DFError('Client Error: Access Denied', error=e)
@@ -387,9 +432,7 @@ class CveScanECRImages(CveScanRegistryImages):
             raise DFError(e.args, error=e)
         except Exception as e:
             raise DFError("Something went wrong while validating ECR credentials", error=e)
-        if token:
-            return True
-        return False
+        return bool(token)
 
 
 class CveScanDockerHubImages(CveScanRegistryImages):
@@ -406,12 +449,15 @@ class CveScanDockerHubImages(CveScanRegistryImages):
 
     def validate(self):
         try:
-            resp = requests.post(self.docker_hub_url + "/users/login/",
-                                 json={"username": self.docker_hub_username, "password": self.docker_hub_password})
-            if resp.status_code == 200:
-                return True
-            else:
-                return False
+            resp = requests.post(
+                f"{self.docker_hub_url}/users/login/",
+                json={
+                    "username": self.docker_hub_username,
+                    "password": self.docker_hub_password,
+                },
+            )
+
+            return resp.status_code == 200
         except Exception as e:
             raise DFError("Something went wrong while validating Docker hub registry credentails", error=e)
 
@@ -419,17 +465,25 @@ class CveScanDockerHubImages(CveScanRegistryImages):
                         filter_past_days=max_days):
         images_list = []
         try:
-            resp = requests.post(self.docker_hub_url + "/users/login/",
-                                 json={"username": self.docker_hub_username, "password": self.docker_hub_password})
+            resp = requests.post(
+                f"{self.docker_hub_url}/users/login/",
+                json={
+                    "username": self.docker_hub_username,
+                    "password": self.docker_hub_password,
+                },
+            )
+
             auth_token = resp.json().get("token", "")
             if not auth_token:
                 return images_list
             image_from_date = datetime.now() - timedelta(days=filter_past_days)
             image_from_date = image_from_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            req_header = {"Authorization": "JWT " + auth_token}
+            req_header = {"Authorization": f"JWT {auth_token}"}
             resp = requests.get(
-                self.docker_hub_url + "/repositories/" + self.docker_hub_namespace + "/?page_size=100",
-                headers=req_header)
+                f"{self.docker_hub_url}/repositories/{self.docker_hub_namespace}/?page_size=100",
+                headers=req_header,
+            )
+
             if resp.status_code != 200:
                 return images_list
             resp = resp.json()
@@ -438,8 +492,13 @@ class CveScanDockerHubImages(CveScanRegistryImages):
             next_url = resp.get("next", None)
             while next_url:
                 resp = requests.get(
-                    self.docker_hub_url + "/repositories/" + self.docker_hub_namespace +
-                    "/?page_size=100&page={0}".format(page_no), headers=req_header)
+                    (
+                        f"{self.docker_hub_url}/repositories/{self.docker_hub_namespace}"
+                        + "/?page_size=100&page={0}".format(page_no)
+                    ),
+                    headers=req_header,
+                )
+
                 if resp.status_code != 200:
                     break
                 resp = resp.json()
@@ -452,9 +511,8 @@ class CveScanDockerHubImages(CveScanRegistryImages):
                 if not result.get("namespace", "") or not result.get("name", ""):
                     continue
                 repo_name = "{0}/{1}".format(result["namespace"], result["name"])
-                if filter_image_name:
-                    if filter_image_name != repo_name:
-                        continue
+                if filter_image_name and filter_image_name != repo_name:
+                    continue
                 if filter_past_days and filter_past_days != max_days and filter_past_days > 0:
                     created_at = datetime.strptime(result["last_updated"].split(".")[0], "%Y-%m-%dT%H:%M:%S")
                     if image_from_date > created_at:
@@ -471,17 +529,16 @@ class CveScanDockerHubImages(CveScanRegistryImages):
                     if not tag_result.get("last_updated", None) or not tag_result.get("name", None):
                         continue
                     image_name_with_tag = "{0}/{1}:{2}".format(result["namespace"], result["name"], tag_result["name"])
-                    if filter_image_name_with_tag:
-                        if filter_image_name_with_tag != image_name_with_tag:
-                            continue
+                    if (
+                        filter_image_name_with_tag
+                        and filter_image_name_with_tag != image_name_with_tag
+                    ):
+                        continue
                     image_size = 0
                     image_os = ""
                     for tag_detail in tag_result.get("images", []):
                         image_size = tag_detail.get("size", "")
-                        if image_size:
-                            image_size = bytes_to_str(image_size, "m")
-                        else:
-                            image_size = ""
+                        image_size = bytes_to_str(image_size, "m") if image_size else ""
                         image_os = tag_detail.get("os", "")
                         break
                     image_details = {"image_name": repo_name, "image_tag": tag_result["name"],
@@ -513,8 +570,8 @@ class CveScanDockerPrivateRegistryImages(CveScanRegistryImages):
         self.docker_pvt_registry_url = docker_pvt_registry_url
         self.docker_registry_name = urlparse(self.docker_pvt_registry_url).netloc
         if not self.docker_registry_name:
-            errmsg = 'CveScanDockerPrivateRegistryImages: registry name could not be derived from {}'.format(
-                self.docker_pvt_registry_url)
+            errmsg = f'CveScanDockerPrivateRegistryImages: registry name could not be derived from {self.docker_pvt_registry_url}'
+
             logging.error(errmsg)
             raise DFError(errmsg)
         self.docker_pvt_registry_username = docker_pvt_registry_username
@@ -525,17 +582,25 @@ class CveScanDockerPrivateRegistryImages(CveScanRegistryImages):
     def validate(self):
         try:
             verify, cert = self.get_self_signed_certs()
-            resp = requests.get(self.docker_pvt_registry_url + "/v2/_catalog", verify=verify, cert=cert,
-                                auth=(self.docker_pvt_registry_username, self.docker_pvt_registry_password))
-            if resp.status_code == 200:
-                return True
-            else:
-                return False
+            resp = requests.get(
+                f"{self.docker_pvt_registry_url}/v2/_catalog",
+                verify=verify,
+                cert=cert,
+                auth=(
+                    self.docker_pvt_registry_username,
+                    self.docker_pvt_registry_password,
+                ),
+            )
+
+            return resp.status_code == 200
         except HTTPError as e:
             raise DFError("HTTP error validating Docker registry credentials", error=e)
         except (ConnectionError, MissingSchema) as e:
-            raise DFError("Error communicating with registry {}. Not reachable".format(self.docker_pvt_registry_url),
-                          error=e)
+            raise DFError(
+                f"Error communicating with registry {self.docker_pvt_registry_url}. Not reachable",
+                error=e,
+            )
+
         except Exception as e:
             raise DFError("Something went wrong while validating Docker registry credentails", error=e)
 
@@ -551,9 +616,10 @@ class CveScanDockerPrivateRegistryImages(CveScanRegistryImages):
         image_from_date = datetime.now() - timedelta(days=filter_past_days)
         image_from_date = image_from_date.replace(hour=0, minute=0, second=0, microsecond=0)
         for repo_name in catalog_resp.json().get("repositories", []):
-            if self.repository_prefix:
-                if not str(repo_name).startswith(self.repository_prefix):
-                    continue
+            if self.repository_prefix and not str(repo_name).startswith(
+                self.repository_prefix
+            ):
+                continue
             tags_resp_obj = requests.get("{0}/v2/{1}/tags/list".format(self.docker_pvt_registry_url, repo_name),
                                          verify=verify, cert=cert, auth=auth)
             if tags_resp_obj.status_code != 200:
@@ -563,10 +629,7 @@ class CveScanDockerPrivateRegistryImages(CveScanRegistryImages):
                 for digest, manifest in tags_resp["manifest"].items():
                     try:
                         image_size = manifest.get("imageSizeBytes", "")
-                        if image_size:
-                            image_size = bytes_to_str(image_size, "m")
-                        else:
-                            image_size = ""
+                        image_size = bytes_to_str(image_size, "m") if image_size else ""
                         pushed_at = int(manifest.get("timeUploadedMs", ""))
                         pushed_at_dt = datetime.fromtimestamp(pushed_at / 1000.0)
                         if filter_past_days and filter_past_days != max_days and filter_past_days > 0:
@@ -577,15 +640,19 @@ class CveScanDockerPrivateRegistryImages(CveScanRegistryImages):
                                 print("past_days filter not available for {0}".format(repo_name))
                         for tag in manifest.get("tag", []):
                             image_name_with_tag = "{0}/{1}:{2}".format(self.docker_registry_name, repo_name, tag)
-                            if filter_image_name_with_tag:
-                                if filter_image_name_with_tag != image_name_with_tag:
-                                    continue
-                            if filter_image_name:
-                                if filter_image_name != repo_name:
-                                    continue
-                            if filter_image_tag:
-                                if filter_image_tag != tag:
-                                    continue
+                            if (
+                                filter_image_name_with_tag
+                                and filter_image_name_with_tag
+                                != image_name_with_tag
+                            ):
+                                continue
+                            if (
+                                filter_image_name
+                                and filter_image_name != repo_name
+                            ):
+                                continue
+                            if filter_image_tag and filter_image_tag != tag:
+                                continue
                             image_details = {"image_name": repo_name, "image_tag": tag, "image_os": "",
                                              "image_name_with_tag": image_name_with_tag,
                                              "docker_image_size": image_size,
@@ -597,15 +664,15 @@ class CveScanDockerPrivateRegistryImages(CveScanRegistryImages):
                 for tag in tags_resp.get("tags", []):
                     try:
                         image_name_with_tag = "{0}/{1}:{2}".format(self.docker_registry_name, repo_name, tag)
-                        if filter_image_name_with_tag:
-                            if filter_image_name_with_tag != image_name_with_tag:
-                                continue
-                        if filter_image_name:
-                            if filter_image_name != repo_name:
-                                continue
-                        if filter_image_tag:
-                            if filter_image_tag != tag:
-                                continue
+                        if (
+                            filter_image_name_with_tag
+                            and filter_image_name_with_tag != image_name_with_tag
+                        ):
+                            continue
+                        if filter_image_name and filter_image_name != repo_name:
+                            continue
+                        if filter_image_tag and filter_image_tag != tag:
+                            continue
                         pushed_at = ""
                         image_os = ""
                         m_resp = requests.get(
@@ -647,7 +714,12 @@ class CveScanAzureRegistryImages(CveScanDockerPrivateRegistryImages):
 
 class CveScanGoogleRegistryImages(CveScanDockerPrivateRegistryImages):
     def __init__(self, registry_hostname, service_account_json, project_id):
-        super().__init__(registry_hostname, "_json_key", service_account_json, repository_prefix=project_id + "/")
+        super().__init__(
+            registry_hostname,
+            "_json_key",
+            service_account_json,
+            repository_prefix=f"{project_id}/",
+        )
 
 
 class CveScanHarborRegistryImages(CveScanRegistryImages):
@@ -668,17 +740,17 @@ class CveScanHarborRegistryImages(CveScanRegistryImages):
             verify, cert = self.get_self_signed_certs()
             resp = requests.get("{0}/api/search?q=".format(self.harbor_registry_url), verify=verify, cert=cert,
                                 auth=(self.harbor_registry_username, self.harbor_registry_password))
-            if resp.status_code == 200:
-                return True
-            else:
-                return False
+            return resp.status_code == 200
         except HTTPError as e:
             if e.response.status_code == 401:
                 return False
             raise DFError("HTTP error validating Harbor registry credentials", error=e)
         except (ConnectionError, MissingSchema) as e:
-            raise DFError("Error communicating with registry {}. Not reachable".format(self.harbor_registry_url),
-                          error=e)
+            raise DFError(
+                f"Error communicating with registry {self.harbor_registry_url}. Not reachable",
+                error=e,
+            )
+
         except Exception as e:
             raise DFError("Something went wrong while validating Harbor registry credentails", error=e)
 
@@ -706,15 +778,15 @@ class CveScanHarborRegistryImages(CveScanRegistryImages):
                     if not tag:
                         continue
                     image_name_with_tag = "{0}/{1}:{2}".format(self.docker_registry_name, repo_name, tag)
-                    if filter_image_name_with_tag:
-                        if filter_image_name_with_tag != image_name_with_tag:
-                            continue
-                    if filter_image_name:
-                        if filter_image_name != repo_name:
-                            continue
-                    if filter_image_tag:
-                        if filter_image_tag != tag:
-                            continue
+                    if (
+                        filter_image_name_with_tag
+                        and filter_image_name_with_tag != image_name_with_tag
+                    ):
+                        continue
+                    if filter_image_name and filter_image_name != repo_name:
+                        continue
+                    if filter_image_tag and filter_image_tag != tag:
+                        continue
                     pushed_at = repo_tag.get("push_time", "")
                     image_os = repo_tag.get("os", "")
                     if not pushed_at:
@@ -724,10 +796,7 @@ class CveScanHarborRegistryImages(CveScanRegistryImages):
                         if image_from_date > push_time:
                             continue
                     image_size = repo_tag.get("size", "")
-                    if image_size:
-                        image_size = bytes_to_str(image_size, "m")
-                    else:
-                        image_size = ""
+                    image_size = bytes_to_str(image_size, "m") if image_size else ""
                     image_details = {
                         "image_name": repo_name, "image_tag": tag, "image_name_with_tag": image_name_with_tag,
                         "pushed_at": pushed_at, "docker_image_size": image_size, "image_os": image_os}
@@ -762,22 +831,22 @@ class CveScanQuayRegistryImages(CveScanRegistryImages):
         try:
             headers = {}
             if self.quay_access_token:
-                headers["Authorization"] = "Bearer " + self.quay_access_token
+                headers["Authorization"] = f"Bearer {self.quay_access_token}"
             verify, cert = self.get_self_signed_certs()
             resp = requests.get(
                 "{0}/api/v1/repository?public=true&namespace={1}".format(self.quay_registry_url, self.quay_namespace),
                 verify=verify, cert=cert, headers=headers)
-            if resp.status_code == 200:
-                return True
-            else:
-                return False
+            return resp.status_code == 200
         except HTTPError as e:
             if e.response.status_code == 401:
                 return False
             raise DFError("HTTP error validating Quay registry credentials", error=e)
         except (ConnectionError, MissingSchema) as e:
-            raise DFError("Error communicating with registry {}. Not reachable".format(self.quay_registry_url),
-                          error=e)
+            raise DFError(
+                f"Error communicating with registry {self.quay_registry_url}. Not reachable",
+                error=e,
+            )
+
         except Exception as e:
             raise DFError("Something went wrong while validating Quay registry credentails", error=e)
 

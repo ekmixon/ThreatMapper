@@ -44,10 +44,8 @@ class IntegrationTypes(object):
 
     def format_content_for_sumo(self, content_json):
         data = []
-        for idx, cnt in enumerate(content_json["contents"]):
-            info = {}
-            for k, v in cnt.items():
-                info[k] = "{0}".format(v)
+        for cnt in content_json["contents"]:
+            info = {k: "{0}".format(v) for k, v in cnt.items()}
             data.append(info)
         return data
 
@@ -113,7 +111,7 @@ class IntegrationTypes(object):
             arr.append(content)
         return arr
 
-    def rename_doc_fields(cls, content, doc_fields_map):
+    def rename_doc_fields(self, content, doc_fields_map):
         return {doc_fields_map[k]: v for k, v in content.items() if k in doc_fields_map}
 
     def send(self, content_json, **kwargs):
@@ -168,19 +166,23 @@ class Slack(IntegrationTypes):
 
     def format_prefix(self, prefix):
         if prefix:
-            prefix = "*" + prefix + "*\n\n"
+            prefix = f"*{prefix}" + "*\n\n"
         return prefix
 
     def format_iteration_prefix(self, idx, prefix):
         if prefix:
-            prefix = "*" + prefix.format(idx + 1) + "*\n"
+            prefix = f"*{prefix.format(idx + 1)}" + "*\n"
         return prefix
 
     def __init__(self, config):
         super(Slack, self).__init__(config)
 
-    def rename_doc_fields(cls, content, doc_fields_map):
-        return {"*" + doc_fields_map[k] + "*": v for k, v in content.items() if k in doc_fields_map}
+    def rename_doc_fields(self, content, doc_fields_map):
+        return {
+            f"*{doc_fields_map[k]}*": v
+            for k, v in content.items()
+            if k in doc_fields_map
+        }
 
     def send(self, content_json, **kwargs):
         notification_id = kwargs["notification_id"]
@@ -311,19 +313,23 @@ class MicrosoftTeams(IntegrationTypes):
 
     def format_prefix(self, prefix):
         if prefix:
-            prefix = "**" + prefix + "**<br><br>"
+            prefix = f"**{prefix}**<br><br>"
         return prefix
 
     def format_iteration_prefix(self, idx, prefix):
         if prefix:
-            prefix = "**" + prefix.format(idx + 1) + "**<br>"
+            prefix = f"**{prefix.format(idx + 1)}**<br>"
         return prefix
 
     def __init__(self, config):
         super(MicrosoftTeams, self).__init__(config)
 
-    def rename_doc_fields(cls, content, doc_fields_map):
-        return {"**" + doc_fields_map[k] + "**": v for k, v in content.items() if k in doc_fields_map}
+    def rename_doc_fields(self, content, doc_fields_map):
+        return {
+            f"**{doc_fields_map[k]}**": v
+            for k, v in content.items()
+            if k in doc_fields_map
+        }
 
     def send(self, content_json, **kwargs):
         notification_id = kwargs["notification_id"]
@@ -358,7 +364,7 @@ class Integration(db.Model):
             "integration_type": self.integration_type
         }
         integration_base = self.__get_integration_base()
-        conf.update(integration_base.pretty_print())
+        conf |= integration_base.pretty_print()
         return conf
 
     @property
@@ -396,4 +402,4 @@ class Integration(db.Model):
                 raise
 
     def __repr__(self):
-        return "<Integration {}>".format(self.id)
+        return f"<Integration {self.id}>"

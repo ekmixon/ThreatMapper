@@ -23,11 +23,11 @@ def update_registry_images(self, registry_id):
         try:
             registry_credential = RegistryCredential.query.get(registry_id)
         except Exception as err:
-            app.logger.error("Failed to get registry credential: error={}".format(err))
+            app.logger.error(f"Failed to get registry credential: error={err}")
         try:
             client = registry_credential.client
         except Exception as err:
-            app.logger.error("Unable to initialize client: error={}".format(err))
+            app.logger.error(f"Unable to initialize client: error={err}")
             return
         image_list = []
         filters_image_os = set()
@@ -47,7 +47,7 @@ def update_registry_images(self, registry_id):
                 filters_image_tag.add(image_detail["image_tag"])
                 image_list.append(image_detail)
         except Exception as err:
-            app.logger.error("Failed to list images: error={}".format(err))
+            app.logger.error(f"Failed to list images: error={err}")
         image_list_details = {
             "image_list": image_list,
             "last_updated": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
@@ -61,15 +61,43 @@ def update_registry_images(self, registry_id):
                 "name": "image_os", "label": "Platform", "type": "string", "options": list(filters_image_os)
             })
         if filters_image_name:
-            filters.append({
-                "name": "image_name", "label": "Image Name", "type": "string", "options": list(filters_image_name)
-            })
-            filters.append({
-                "label": "Vulnerability Scan Status", "name": "vulnerability_scan_status",
-                "options": ["queued", "in_progress", "complete", "error", "never_scanned"], "type": "string"})
-            filters.append({
-                "label": "Pushed At", "name": "pushed_at", "type": "date", "multi_select": False,
-                "options": ["Past 1 day", "Past 7 days", "Past 1 month", "Past 3 months", "Past 6 months", "Show all"]})
+            filters.extend(
+                (
+                    {
+                        "name": "image_name",
+                        "label": "Image Name",
+                        "type": "string",
+                        "options": list(filters_image_name),
+                    },
+                    {
+                        "label": "Vulnerability Scan Status",
+                        "name": "vulnerability_scan_status",
+                        "options": [
+                            "queued",
+                            "in_progress",
+                            "complete",
+                            "error",
+                            "never_scanned",
+                        ],
+                        "type": "string",
+                    },
+                    {
+                        "label": "Pushed At",
+                        "name": "pushed_at",
+                        "type": "date",
+                        "multi_select": False,
+                        "options": [
+                            "Past 1 day",
+                            "Past 7 days",
+                            "Past 1 month",
+                            "Past 3 months",
+                            "Past 6 months",
+                            "Show all",
+                        ],
+                    },
+                )
+            )
+
         if filters_image_tag:
             filters.append({
                 "name": "image_tag", "label": "Image Tag", "type": "string", "options": list(filters_image_tag)

@@ -13,11 +13,20 @@ from utils.helper import websocketio_channel_name_format
 @celery_app.task(bind=True, default_retry_delay=60)
 def notification_task(self, **kwargs):
     topology_data = redis.mget(
-        websocketio_channel_name_format(NODE_TYPE_HOST + "?format=deepfence")[1],
-        websocketio_channel_name_format(NODE_TYPE_CONTAINER + "?format=deepfence")[1],
-        websocketio_channel_name_format(NODE_TYPE_CONTAINER_IMAGE + "?format=deepfence")[1],
-        websocketio_channel_name_format(NODE_TYPE_POD + "?format=deepfence")[1],
+        websocketio_channel_name_format(f"{NODE_TYPE_HOST}?format=deepfence")[
+            1
+        ],
+        websocketio_channel_name_format(
+            f"{NODE_TYPE_CONTAINER}?format=deepfence"
+        )[1],
+        websocketio_channel_name_format(
+            f"{NODE_TYPE_CONTAINER_IMAGE}?format=deepfence"
+        )[1],
+        websocketio_channel_name_format(f"{NODE_TYPE_POD}?format=deepfence")[
+            1
+        ],
     )
+
     topology_data = [
         json.loads(topology_data[0]) if topology_data[0] else {},
         json.loads(topology_data[1]) if topology_data[1] else {},
@@ -36,10 +45,14 @@ def notification_task(self, **kwargs):
                     VulnerabilityNotification.user_id.in_(active_user_ids),
                     VulnerabilityNotification.duration_in_mins == -1).all()
                 for notification in vulnerability_notifications:
-                    filtered_cve_list = []
-                    for cve in data:
-                        if filter_vulnerability_notification(notification.filters, cve, topology_data):
-                            filtered_cve_list.append(cve)
+                    filtered_cve_list = [
+                        cve
+                        for cve in data
+                        if filter_vulnerability_notification(
+                            notification.filters, cve, topology_data
+                        )
+                    ]
+
                     if not filtered_cve_list:
                         continue
                     try:

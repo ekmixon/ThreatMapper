@@ -28,10 +28,14 @@ class NodeUtils(object):
         for node_type in NODE_TYPES:
             redis_pipe.hget(DF_ID_TO_SCOPE_ID_REDIS_KEY_PREFIX + node_type.upper(), df_id)
         df_id_to_scope_id_redis_val = redis_pipe.execute()
-        for idx in range(len(df_id_to_scope_id_redis_val)):
-            if df_id_to_scope_id_redis_val[idx]:
-                return df_id_to_scope_id_redis_val[idx], NODE_TYPES[idx]
-        return "", ""
+        return next(
+            (
+                (df_id_to_scope_id_redis_val[idx], NODE_TYPES[idx])
+                for idx in range(len(df_id_to_scope_id_redis_val))
+                if df_id_to_scope_id_redis_val[idx]
+            ),
+            ("", ""),
+        )
 
     def format_node_detail(self, node_type, node_details, detailed=False):
         return getattr(self, "format_{0}_node_detail".format(node_type))(node_details, detailed)
@@ -134,8 +138,7 @@ class NodeUtils(object):
             if metadata["id"] == "publicIpAddress":
                 node_public_ip = metadata["value"]
             elif metadata["id"] == "local_networks":
-                for nw in metadata["value"].split(','):
-                    node_local_networks.append(nw.strip())
+                node_local_networks.extend(nw.strip() for nw in metadata["value"].split(','))
                 metadata["value"] = list(node_local_networks)
             elif metadata["id"] == "probeId":
                 node_probe_id = metadata["value"]
@@ -146,25 +149,31 @@ class NodeUtils(object):
             del formatted_metadata["probeId"]
         if "openPorts" in formatted_metadata:
             formatted_metadata["openPorts"] = json.loads(formatted_metadata["openPorts"])
-        formatted_host_details = formatted_metadata
-        formatted_host_details.update({
-            "id": self.get_df_id_from_scope_id(host_details["id"], NODE_TYPE_HOST), "host_name": host_name,
-            "type": NODE_TYPE_HOST, "pseudo": host_details.get("pseudo", False),
-            "meta": host_details.get("labelMinor", "")
-        })
+        formatted_host_details = formatted_metadata | {
+            "id": self.get_df_id_from_scope_id(host_details["id"], NODE_TYPE_HOST),
+            "host_name": host_name,
+            "type": NODE_TYPE_HOST,
+            "pseudo": host_details.get("pseudo", False),
+            "meta": host_details.get("labelMinor", ""),
+        }
+
         # Following will be in node_details api
         if detailed:
-            children = self.format_parent_or_children_nodes(host_details.get("children", []))
-            if children:
+            if children := self.format_parent_or_children_nodes(
+                host_details.get("children", [])
+            ):
                 formatted_host_details["children"] = children
-            parents = self.format_parent_or_children_nodes(host_details.get("parents", []))
-            if parents:
+            if parents := self.format_parent_or_children_nodes(
+                host_details.get("parents", [])
+            ):
                 formatted_host_details["parents"] = parents
-            connections = self.format_connections(host_details.get("connections", []))
-            if connections:
+            if connections := self.format_connections(
+                host_details.get("connections", [])
+            ):
                 formatted_host_details["connections"] = connections
-            adjacency = self.format_adjacency(host_details.get("adjacency", []), NODE_TYPE_HOST)
-            if adjacency:
+            if adjacency := self.format_adjacency(
+                host_details.get("adjacency", []), NODE_TYPE_HOST
+            ):
                 formatted_host_details["adjacency"] = adjacency
 
         return formatted_host_details, node_public_ip, node_local_networks, node_probe_id
@@ -173,22 +182,24 @@ class NodeUtils(object):
         formatted_metadata = {}
         for metadata in container_details.get("metadata", []):
             if metadata["id"] == "docker_container_ips":
-                docker_container_ips = set()
-                for ip in metadata["value"].split(','):
-                    docker_container_ips.add(ip.strip())
+                docker_container_ips = {ip.strip() for ip in metadata["value"].split(',')}
                 metadata["value"] = list(docker_container_ips)
             formatted_metadata[metadata["id"]] = self.get_scope_metadata_value(metadata)
         image_name = formatted_metadata.get("docker_image_name", "")
         image_name_split = image_name.rsplit(":", 1)
         if "docker_image_name" in formatted_metadata:
             del formatted_metadata["docker_image_name"]
-        formatted_container_details = formatted_metadata
-        formatted_container_details.update({
-            "id": self.get_df_id_from_scope_id(container_details["id"], NODE_TYPE_CONTAINER),
-            "container_name": container_details.get("label", ""), "type": NODE_TYPE_CONTAINER,
-            "host_name": container_details.get("labelMinor", ""), "image_name": image_name_split[0],
-            "pseudo": container_details.get("pseudo", False)
-        })
+        formatted_container_details = formatted_metadata | {
+            "id": self.get_df_id_from_scope_id(
+                container_details["id"], NODE_TYPE_CONTAINER
+            ),
+            "container_name": container_details.get("label", ""),
+            "type": NODE_TYPE_CONTAINER,
+            "host_name": container_details.get("labelMinor", ""),
+            "image_name": image_name_split[0],
+            "pseudo": container_details.get("pseudo", False),
+        }
+
         status_stopped = ["exited", "restarting", "dead", "removing", "created"]
         status_paused = ["paused"]
         status_running = ["up", "running"]
@@ -202,23 +213,25 @@ class NodeUtils(object):
                 container_state = "running"
         formatted_container_details["docker_container_state"] = container_state
         formatted_container_details["meta"] = formatted_container_details["host_name"]
-        image_tag = "latest"
-        if len(image_name_split) > 1:
-            image_tag = image_name_split[1]
+        image_tag = image_name_split[1] if len(image_name_split) > 1 else "latest"
         formatted_container_details["image_tag"] = image_tag
         # Following will be in node_details api
         if detailed:
-            children = self.format_parent_or_children_nodes(container_details.get("children", []))
-            if children:
+            if children := self.format_parent_or_children_nodes(
+                container_details.get("children", [])
+            ):
                 formatted_container_details["children"] = children
-            parents = self.format_parent_or_children_nodes(container_details.get("parents", []))
-            if parents:
+            if parents := self.format_parent_or_children_nodes(
+                container_details.get("parents", [])
+            ):
                 formatted_container_details["parents"] = parents
-            connections = self.format_connections(container_details.get("connections", []))
-            if connections:
+            if connections := self.format_connections(
+                container_details.get("connections", [])
+            ):
                 formatted_container_details["connections"] = connections
-            adjacency = self.format_adjacency(container_details.get("adjacency", []), NODE_TYPE_CONTAINER)
-            if adjacency:
+            if adjacency := self.format_adjacency(
+                container_details.get("adjacency", []), NODE_TYPE_CONTAINER
+            ):
                 formatted_container_details["adjacency"] = adjacency
         return formatted_container_details
 
@@ -230,77 +243,106 @@ class NodeUtils(object):
         }
         # Following will be in node_details api
         if detailed:
-            children = self.format_parent_or_children_nodes(image_details.get("children", []))
-            if children:
+            if children := self.format_parent_or_children_nodes(
+                image_details.get("children", [])
+            ):
                 formatted_container_by_name_details["children"] = children
-            parents = self.format_parent_or_children_nodes(image_details.get("parents", []))
-            if parents:
+            if parents := self.format_parent_or_children_nodes(
+                image_details.get("parents", [])
+            ):
                 formatted_container_by_name_details["parents"] = parents
-            connections = self.format_connections(image_details.get("connections", []))
-            if connections:
+            if connections := self.format_connections(
+                image_details.get("connections", [])
+            ):
                 formatted_container_by_name_details["connections"] = connections
-            adjacency = self.format_adjacency(image_details.get("adjacency", []), NODE_TYPE_CONTAINER_BY_NAME)
-            if adjacency:
+            if adjacency := self.format_adjacency(
+                image_details.get("adjacency", []), NODE_TYPE_CONTAINER_BY_NAME
+            ):
                 formatted_container_by_name_details["adjacency"] = adjacency
         return formatted_container_by_name_details
 
     def format_container_image_node_detail(self, image_details, detailed=False):
         formatted_metadata = {metadata["id"]: self.get_scope_metadata_value(metadata) for metadata in
                               image_details.get("metadata", [])}
-        host_name = ""
-        for parent in image_details.get("parents", []):
-            if parent["topologyId"] == "hosts":
-                host_name = parent["label"]
-                break
-        formatted_container_image_details = formatted_metadata
-        formatted_container_image_details.update({
-            "id": self.get_df_id_from_scope_id(image_details["id"], NODE_TYPE_CONTAINER_IMAGE),
-            "image_name": image_details.get("label", ""), "type": NODE_TYPE_CONTAINER_IMAGE, "host_name": host_name,
-            "pseudo": image_details.get("pseudo", False), "meta": image_details.get("labelMinor", "")
-        })
+        host_name = next(
+            (
+                parent["label"]
+                for parent in image_details.get("parents", [])
+                if parent["topologyId"] == "hosts"
+            ),
+            "",
+        )
+
+        formatted_container_image_details = formatted_metadata | {
+            "id": self.get_df_id_from_scope_id(
+                image_details["id"], NODE_TYPE_CONTAINER_IMAGE
+            ),
+            "image_name": image_details.get("label", ""),
+            "type": NODE_TYPE_CONTAINER_IMAGE,
+            "host_name": host_name,
+            "pseudo": image_details.get("pseudo", False),
+            "meta": image_details.get("labelMinor", ""),
+        }
+
         # Following will be in node_details api
         if detailed:
             children = self.format_parent_or_children_nodes(image_details.get("children", []))
             if children:
                 formatted_container_image_details["children"] = children
-            parents = self.format_parent_or_children_nodes(image_details.get("parents", []))
-            if parents:
+            if parents := self.format_parent_or_children_nodes(
+                image_details.get("parents", [])
+            ):
                 formatted_container_image_details["parents"] = children
-            connections = self.format_connections(image_details.get("connections", []))
-            if connections:
+            if connections := self.format_connections(
+                image_details.get("connections", [])
+            ):
                 formatted_container_image_details["connections"] = connections
-            adjacency = self.format_adjacency(image_details.get("adjacency", []), NODE_TYPE_CONTAINER_IMAGE)
-            if adjacency:
+            if adjacency := self.format_adjacency(
+                image_details.get("adjacency", []), NODE_TYPE_CONTAINER_IMAGE
+            ):
                 formatted_container_image_details["adjacency"] = adjacency
         return formatted_container_image_details
 
     def format_process_node_detail(self, process_details, detailed=False):
         formatted_metadata = {metadata["id"]: self.get_scope_metadata_value(metadata) for metadata in
                               process_details.get("metadata", [])}
-        host_name = ""
-        for parent in process_details.get("parents", []):
-            if parent["topologyId"] == "hosts":
-                host_name = parent["label"]
-                break
-        formatted_process_details = formatted_metadata
-        formatted_process_details.update({
-            "id": self.get_df_id_from_scope_id(process_details["id"], NODE_TYPE_PROCESS),
-            "process": process_details.get("label", ""), "meta": process_details.get("labelMinor", ""),
-            "type": NODE_TYPE_PROCESS, "host_name": host_name, "pseudo": process_details.get("pseudo", False)
-        })
+        host_name = next(
+            (
+                parent["label"]
+                for parent in process_details.get("parents", [])
+                if parent["topologyId"] == "hosts"
+            ),
+            "",
+        )
+
+        formatted_process_details = formatted_metadata | {
+            "id": self.get_df_id_from_scope_id(
+                process_details["id"], NODE_TYPE_PROCESS
+            ),
+            "process": process_details.get("label", ""),
+            "meta": process_details.get("labelMinor", ""),
+            "type": NODE_TYPE_PROCESS,
+            "host_name": host_name,
+            "pseudo": process_details.get("pseudo", False),
+        }
+
         # Following will be in node_details api
         if detailed:
-            children = self.format_parent_or_children_nodes(process_details.get("children", []))
-            if children:
+            if children := self.format_parent_or_children_nodes(
+                process_details.get("children", [])
+            ):
                 formatted_process_details["children"] = children
-            parents = self.format_parent_or_children_nodes(process_details.get("parents", []))
-            if parents:
+            if parents := self.format_parent_or_children_nodes(
+                process_details.get("parents", [])
+            ):
                 formatted_process_details["parents"] = parents
-            connections = self.format_connections(process_details.get("connections", []))
-            if connections:
+            if connections := self.format_connections(
+                process_details.get("connections", [])
+            ):
                 formatted_process_details["connections"] = connections
-            adjacency = self.format_adjacency(process_details.get("adjacency", []), NODE_TYPE_PROCESS)
-            if adjacency:
+            if adjacency := self.format_adjacency(
+                process_details.get("adjacency", []), NODE_TYPE_PROCESS
+            ):
                 formatted_process_details["adjacency"] = adjacency
         return formatted_process_details
 
@@ -312,126 +354,171 @@ class NodeUtils(object):
         }
         # Following will be in node_details api
         if detailed:
-            children = self.format_parent_or_children_nodes(process_details.get("children", []))
-            if children:
+            if children := self.format_parent_or_children_nodes(
+                process_details.get("children", [])
+            ):
                 formatted_process_name_details["children"] = children
-            parents = self.format_parent_or_children_nodes(process_details.get("parents", []))
-            if parents:
+            if parents := self.format_parent_or_children_nodes(
+                process_details.get("parents", [])
+            ):
                 formatted_process_name_details["parents"] = parents
-            connections = self.format_connections(process_details.get("connections", []))
-            if connections:
+            if connections := self.format_connections(
+                process_details.get("connections", [])
+            ):
                 formatted_process_name_details["connections"] = connections
-            adjacency = self.format_adjacency(process_details.get("adjacency", []), NODE_TYPE_PROCESS_BY_NAME)
-            if adjacency:
+            if adjacency := self.format_adjacency(
+                process_details.get("adjacency", []), NODE_TYPE_PROCESS_BY_NAME
+            ):
                 formatted_process_name_details["adjacency"] = adjacency
         return formatted_process_name_details
 
     def format_pods_node_detail(self, pod_details, detailed=False):
-        formatted_metadata = {}
-        for metadata in pod_details.get("metadata", []):
-            formatted_metadata[metadata["id"]] = self.get_scope_metadata_value(metadata)
-        formatted_pod_details = formatted_metadata
-        formatted_pod_details.update({
-            "id": self.get_df_id_from_scope_id(pod_details["id"], NODE_TYPE_POD), "type": NODE_TYPE_POD,
-            "name": pod_details.get("label", ""), "pseudo": pod_details.get("pseudo", False),
-            "meta": pod_details.get("labelMinor", "")
-        })
-        host_name = ""
+        formatted_metadata = {
+            metadata["id"]: self.get_scope_metadata_value(metadata)
+            for metadata in pod_details.get("metadata", [])
+        }
+
+        formatted_pod_details = formatted_metadata | {
+            "id": self.get_df_id_from_scope_id(pod_details["id"], NODE_TYPE_POD),
+            "type": NODE_TYPE_POD,
+            "name": pod_details.get("label", ""),
+            "pseudo": pod_details.get("pseudo", False),
+            "meta": pod_details.get("labelMinor", ""),
+        }
+
         parent_nodes = self.format_parent_or_children_nodes(pod_details.get("parents", []))
-        for parent_node in parent_nodes:
-            if parent_node["type"] == NODE_TYPE_HOST and parent_node["nodes"]:
-                host_name = parent_node["nodes"][0]["label"]
-                break
+        host_name = next(
+            (
+                parent_node["nodes"][0]["label"]
+                for parent_node in parent_nodes
+                if parent_node["type"] == NODE_TYPE_HOST and parent_node["nodes"]
+            ),
+            "",
+        )
+
         formatted_pod_details["host_name"] = host_name
         # Following will be in node_details api
         if detailed:
-            children_nodes = self.format_parent_or_children_nodes(pod_details.get("children", []))
-            if children_nodes:
+            if children_nodes := self.format_parent_or_children_nodes(
+                pod_details.get("children", [])
+            ):
                 formatted_pod_details["children"] = children_nodes
             if parent_nodes:
                 formatted_pod_details["parents"] = parent_nodes
-            connections = self.format_connections(pod_details.get("connections", []))
-            if connections:
+            if connections := self.format_connections(
+                pod_details.get("connections", [])
+            ):
                 formatted_pod_details["connections"] = connections
-            adjacency = self.format_adjacency(pod_details.get("adjacency", []), NODE_TYPE_POD)
-            if adjacency:
+            if adjacency := self.format_adjacency(
+                pod_details.get("adjacency", []), NODE_TYPE_POD
+            ):
                 formatted_pod_details["adjacency"] = adjacency
         return formatted_pod_details
 
     def format_kube_controller_node_detail(self, kube_ctrl_details, detailed=False):
-        formatted_metadata = {}
-        for metadata in kube_ctrl_details.get("metadata", []):
-            formatted_metadata[metadata["id"]] = self.get_scope_metadata_value(metadata)
-        formatted_kube_ctrl_details = formatted_metadata
-        formatted_kube_ctrl_details.update({
-            "id": self.get_df_id_from_scope_id(kube_ctrl_details["id"], NODE_TYPE_KUBE_CONTROLLER),
-            "type": NODE_TYPE_KUBE_CONTROLLER, "meta": kube_ctrl_details.get("labelMinor", ""),
-            "name": kube_ctrl_details.get("label", ""), "pseudo": kube_ctrl_details.get("pseudo", False)
-        })
+        formatted_metadata = {
+            metadata["id"]: self.get_scope_metadata_value(metadata)
+            for metadata in kube_ctrl_details.get("metadata", [])
+        }
+
+        formatted_kube_ctrl_details = formatted_metadata | {
+            "id": self.get_df_id_from_scope_id(
+                kube_ctrl_details["id"], NODE_TYPE_KUBE_CONTROLLER
+            ),
+            "type": NODE_TYPE_KUBE_CONTROLLER,
+            "meta": kube_ctrl_details.get("labelMinor", ""),
+            "name": kube_ctrl_details.get("label", ""),
+            "pseudo": kube_ctrl_details.get("pseudo", False),
+        }
+
         # Following will be in node_details api
         if detailed:
-            children_nodes = self.format_parent_or_children_nodes(kube_ctrl_details.get("children", []))
-            if children_nodes:
+            if children_nodes := self.format_parent_or_children_nodes(
+                kube_ctrl_details.get("children", [])
+            ):
                 formatted_kube_ctrl_details["children"] = children_nodes
-            parent_nodes = self.format_parent_or_children_nodes(kube_ctrl_details.get("parents", []))
-            if parent_nodes:
+            if parent_nodes := self.format_parent_or_children_nodes(
+                kube_ctrl_details.get("parents", [])
+            ):
                 formatted_kube_ctrl_details["parents"] = parent_nodes
-            connections = self.format_connections(kube_ctrl_details.get("connections", []))
-            if connections:
+            if connections := self.format_connections(
+                kube_ctrl_details.get("connections", [])
+            ):
                 formatted_kube_ctrl_details["connections"] = connections
-            adjacency = self.format_adjacency(kube_ctrl_details.get("adjacency", []), NODE_TYPE_KUBE_CONTROLLER)
-            if adjacency:
+            if adjacency := self.format_adjacency(
+                kube_ctrl_details.get("adjacency", []), NODE_TYPE_KUBE_CONTROLLER
+            ):
                 formatted_kube_ctrl_details["adjacency"] = adjacency
         return formatted_kube_ctrl_details
 
     def format_kube_service_node_detail(self, kube_serv_details, detailed=False):
-        formatted_metadata = {}
-        for metadata in kube_serv_details.get("metadata", []):
-            formatted_metadata[metadata["id"]] = self.get_scope_metadata_value(metadata)
-        formatted_kube_serv_details = formatted_metadata
-        formatted_kube_serv_details.update({
-            "id": self.get_df_id_from_scope_id(kube_serv_details["id"], NODE_TYPE_KUBE_SERVICE),
-            "type": NODE_TYPE_KUBE_SERVICE, "meta": kube_serv_details.get("labelMinor", ""),
-            "name": kube_serv_details.get("label", ""), "pseudo": kube_serv_details.get("pseudo", False)
-        })
+        formatted_metadata = {
+            metadata["id"]: self.get_scope_metadata_value(metadata)
+            for metadata in kube_serv_details.get("metadata", [])
+        }
+
+        formatted_kube_serv_details = formatted_metadata | {
+            "id": self.get_df_id_from_scope_id(
+                kube_serv_details["id"], NODE_TYPE_KUBE_SERVICE
+            ),
+            "type": NODE_TYPE_KUBE_SERVICE,
+            "meta": kube_serv_details.get("labelMinor", ""),
+            "name": kube_serv_details.get("label", ""),
+            "pseudo": kube_serv_details.get("pseudo", False),
+        }
+
         # Following will be in node_details api
         if detailed:
-            children_nodes = self.format_parent_or_children_nodes(kube_serv_details.get("children", []))
-            if children_nodes:
+            if children_nodes := self.format_parent_or_children_nodes(
+                kube_serv_details.get("children", [])
+            ):
                 formatted_kube_serv_details["children"] = children_nodes
-            parent_nodes = self.format_parent_or_children_nodes(kube_serv_details.get("parents", []))
-            if parent_nodes:
+            if parent_nodes := self.format_parent_or_children_nodes(
+                kube_serv_details.get("parents", [])
+            ):
                 formatted_kube_serv_details["parents"] = parent_nodes
-            connections = self.format_connections(kube_serv_details.get("connections", []))
-            if connections:
+            if connections := self.format_connections(
+                kube_serv_details.get("connections", [])
+            ):
                 formatted_kube_serv_details["connections"] = connections
-            adjacency = self.format_adjacency(kube_serv_details.get("adjacency", []), NODE_TYPE_KUBE_SERVICE)
-            if adjacency:
+            if adjacency := self.format_adjacency(
+                kube_serv_details.get("adjacency", []), NODE_TYPE_KUBE_SERVICE
+            ):
                 formatted_kube_serv_details["adjacency"] = adjacency
         return formatted_kube_serv_details
 
     def format_swarm_service_node_detail(self, swarm_service_details, detailed=False):
-        formatted_metadata = {}
-        for metadata in swarm_service_details.get("metadata", []):
-            formatted_metadata[metadata["id"]] = self.get_scope_metadata_value(metadata)
-        formatted_swarm_serv_details = formatted_metadata
-        formatted_swarm_serv_details.update({
-            "id": self.get_df_id_from_scope_id(swarm_service_details["id"], NODE_TYPE_SWARM_SERVICE),
-            "type": NODE_TYPE_SWARM_SERVICE, "meta": swarm_service_details.get("labelMinor", ""),
-            "name": swarm_service_details.get("label", ""), "pseudo": swarm_service_details.get("pseudo", False)
-        })
+        formatted_metadata = {
+            metadata["id"]: self.get_scope_metadata_value(metadata)
+            for metadata in swarm_service_details.get("metadata", [])
+        }
+
+        formatted_swarm_serv_details = formatted_metadata | {
+            "id": self.get_df_id_from_scope_id(
+                swarm_service_details["id"], NODE_TYPE_SWARM_SERVICE
+            ),
+            "type": NODE_TYPE_SWARM_SERVICE,
+            "meta": swarm_service_details.get("labelMinor", ""),
+            "name": swarm_service_details.get("label", ""),
+            "pseudo": swarm_service_details.get("pseudo", False),
+        }
+
         # Following will be in node_details api
         if detailed:
-            children_nodes = self.format_parent_or_children_nodes(swarm_service_details.get("children", []))
-            if children_nodes:
+            if children_nodes := self.format_parent_or_children_nodes(
+                swarm_service_details.get("children", [])
+            ):
                 formatted_swarm_serv_details["children"] = children_nodes
-            parent_nodes = self.format_parent_or_children_nodes(swarm_service_details.get("parents", []))
-            if parent_nodes:
+            if parent_nodes := self.format_parent_or_children_nodes(
+                swarm_service_details.get("parents", [])
+            ):
                 formatted_swarm_serv_details["parents"] = parent_nodes
-            connections = self.format_connections(swarm_service_details.get("connections", []))
-            if connections:
+            if connections := self.format_connections(
+                swarm_service_details.get("connections", [])
+            ):
                 formatted_swarm_serv_details["connections"] = connections
-            adjacency = self.format_adjacency(swarm_service_details.get("adjacency", []), NODE_TYPE_SWARM_SERVICE)
-            if adjacency:
+            if adjacency := self.format_adjacency(
+                swarm_service_details.get("adjacency", []), NODE_TYPE_SWARM_SERVICE
+            ):
                 formatted_swarm_serv_details["adjacency"] = adjacency
         return formatted_swarm_serv_details

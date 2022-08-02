@@ -45,7 +45,7 @@ def validate_password_policy(password):
 
     msg = "At least 1 special character (punctuation)"
     special_chars = "!\"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"
-    if not any(c in special_chars for c in password):
+    if all(c not in special_chars for c in password):
         return False, msg
 
     msg = "valid"
@@ -57,7 +57,7 @@ def validate_password_policy(password):
 def password_policy_check(password):
     msg = "success"
     if len(password) < MIN_PASSWORD_LENGTH:
-        msg = "Min password length is {}".format(MIN_PASSWORD_LENGTH)
+        msg = f"Min password length is {MIN_PASSWORD_LENGTH}"
         return False, msg
     elif not validate_password_policy(password)[0]:
         return False, validate_password_policy(password)[1]
@@ -67,11 +67,7 @@ def password_policy_check(password):
 
 def calculate_interval(number, time_unit):
     # For show all we use the interval that is specified for 1year.
-    if time_unit == 'all':
-        string = '1year'
-    else:
-        string = str(number) + time_unit
-
+    string = '1year' if time_unit == 'all' else str(number) + time_unit
     if number > 1:
         string += 's'
     return INTERVAL_MAPPING.get(string)
@@ -80,8 +76,7 @@ def calculate_interval(number, time_unit):
 def get_rounding_time_unit(time_unit):
     rounding_time_unit = time_unit
 
-    # For Month use Day as the rounding time unit.
-    if time_unit == 'M' or time_unit == 'all':
+    if rounding_time_unit in ['M', 'all']:
         rounding_time_unit = 'd'
     return rounding_time_unit
 
@@ -106,10 +101,9 @@ def calculate_interval_for_show_all_filter(min_time):
     max_time = arrow.now()
 
     difference = max_time - min_time
-    days = difference.days
     minutes = difference.seconds // 60
 
-    if days:
+    if days := difference.days:
         if days < 7:
             interval = calculate_interval(24, 'hour')
         elif days < 30:
@@ -229,33 +223,35 @@ def colorCode(color):
 def mask_url(url, integration):
     # https://hooks.slack.com/services/qwfknqwklfn => https://hooks.slack.com/services/qwf*****lfn
     if integration == 'slack':
-        matches = re.search(
-            "https:\/\/hooks\.slack\.com\/services\/([0-9A-Za-z]{1,})\/([0-9A-Za-z]{1,})\/([0-9A-Za-z]{1,})$", url)
-        if matches:
-            all_matched = list(matches.groups())
-            for i in range(len(all_matched)):
-                all_matched[i] = all_matched[i][:3] + "*" * (len(all_matched[i]) - 6) + all_matched[i][-3:]
-            return "https://hooks.slack.com/services/" + "/".join(all_matched)
-        else:
+        if not (
+            matches := re.search(
+                "https:\/\/hooks\.slack\.com\/services\/([0-9A-Za-z]{1,})\/([0-9A-Za-z]{1,})\/([0-9A-Za-z]{1,})$",
+                url,
+            )
+        ):
             return url
+        all_matched = list(matches.groups())
+        for i in range(len(all_matched)):
+            all_matched[i] = all_matched[i][:3] + "*" * (len(all_matched[i]) - 6) + all_matched[i][-3:]
+        return "https://hooks.slack.com/services/" + "/".join(all_matched)
     if integration == 'microsoft_teams':
-        matches = re.search("(https:.*?\/IncomingWebhook\/)(.*?)\/(.*?)$", url)
-        if matches:
-            all_matched = list(matches.groups())[1:]
-            for i in range(len(all_matched)):
-                all_matched[i] = all_matched[i][:3] + "*" * (len(all_matched[i]) - 6) + all_matched[i][-3:]
-            return list(matches.groups())[0] + "/".join(all_matched)
-        else:
+        if not (
+            matches := re.search(
+                "(https:.*?\/IncomingWebhook\/)(.*?)\/(.*?)$", url
+            )
+        ):
             return url
+        all_matched = list(matches.groups())[1:]
+        for i in range(len(all_matched)):
+            all_matched[i] = all_matched[i][:3] + "*" * (len(all_matched[i]) - 6) + all_matched[i][-3:]
+        return list(matches.groups())[0] + "/".join(all_matched)
     if integration == 'sumo_logic':
-        matches = re.search("(https:.*?\/http)\/(.*?)$", url)
-        if matches:
-            all_matched = list(matches.groups())[1:]
-            for i in range(len(all_matched)):
-                all_matched[i] = all_matched[i][:4] + "*" * (len(all_matched[i]) - 8) + all_matched[i][-4:]
-            return list(matches.groups())[0] + "/".join(all_matched)
-        else:
+        if not (matches := re.search("(https:.*?\/http)\/(.*?)$", url)):
             return url
+        all_matched = list(matches.groups())[1:]
+        for i in range(len(all_matched)):
+            all_matched[i] = all_matched[i][:4] + "*" * (len(all_matched[i]) - 8) + all_matched[i][-4:]
+        return list(matches.groups())[0] + "/".join(all_matched)
 
 
 def mask_api_key(key):

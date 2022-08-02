@@ -13,9 +13,8 @@ def user_permission(user_role):
             current_user = get_jwt_identity()
             if current_user.get("role") == user_role:
                 return func(*args, **kwargs)
-            else:
-                app.logger.debug("User [{}] tried to access a restricted resource.".format(current_user["id"]))
-                raise Forbidden("Permission denied")
+            app.logger.debug("User [{}] tried to access a restricted resource.".format(current_user["id"]))
+            raise Forbidden("Permission denied")
 
         return func_wrapper
 
@@ -26,11 +25,13 @@ def non_read_only_user(func):
     @wraps(func)
     def func_wrapper(*args, **kwargs):
         current_user = get_jwt_identity()
-        if current_user.get("role") == USER_ROLES.ADMIN_USER or current_user.get("role") == USER_ROLES.NORMAL_USER:
+        if current_user.get("role") in [
+            USER_ROLES.ADMIN_USER,
+            USER_ROLES.NORMAL_USER,
+        ]:
             return func(*args, **kwargs)
-        else:
-            app.logger.debug("User [{}] tried to access a restricted resource.".format(current_user["id"]))
-            raise Forbidden("Permission denied")
+        app.logger.debug("User [{}] tried to access a restricted resource.".format(current_user["id"]))
+        raise Forbidden("Permission denied")
 
     return func_wrapper
 
@@ -43,8 +44,7 @@ def admin_user_only(func):
         admin_user = Role.query.filter_by(name=USER_ROLES.ADMIN_USER).first()
         if current_user_obj.role == admin_user:
             return func(*args, **kwargs)
-        else:
-            app.logger.debug("User [{}] tried to access a restricted resource.".format(current_user["id"]))
-            raise Forbidden("Permission denied")
+        app.logger.debug("User [{}] tried to access a restricted resource.".format(current_user["id"]))
+        raise Forbidden("Permission denied")
 
     return func_wrapper

@@ -34,9 +34,7 @@ class AzureProvider(AbstractProvider):
                 self.metadata_url,
                 headers=self.headers,
             )
-            if response.status_code != 200:
-                return False
-            return True
+            return response.status_code == 200
         except BaseException:
             return False
 
@@ -46,7 +44,7 @@ class AzureProvider(AbstractProvider):
         """
         self.logger.debug('Checking Azure vendor file')
         do_path = Path(self.vendor_file)
-        if do_path.is_file():
-            if 'Microsoft Corporation' in open(self.vendor_file).read():
-                return True
-        return False
+        return bool(
+            do_path.is_file()
+            and 'Microsoft Corporation' in open(self.vendor_file).read()
+        )

@@ -19,27 +19,24 @@ class BarChart:
         except ValueError:
             pass
 
-        for i in range(0, max_columns):
+        for i in range(max_columns):
             column = {
                 "label": data[xlabels[max_column_index]][i]['key'],
                 'subdata': [data[key][i]['value']
                             if i < len(data[key]) else 0 for key in xlabels],
             }
             self.matrix.append(column)
-        self.index = range(0, len(xlabels))
+        self.index = range(len(xlabels))
         self.data = data
         self.config = config
         self.bar_width = 0.35
 
     def _plot(self, ax):
         position = 0
-        factor = 1
-        for column in self.matrix:
+        for factor, column in enumerate(self.matrix, start=1):
             ax.bar([x + position for x in self.index], column.get('subdata'),
                    self.bar_width, label=column.get('label'))
             position = self.bar_width * factor
-            factor += 1
-
         box = ax.get_position()
         ax.set_position([box.x0, box.y0, box.width, box.height * 0.85])
 

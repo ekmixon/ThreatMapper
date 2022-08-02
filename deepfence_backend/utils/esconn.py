@@ -14,7 +14,8 @@ from utils.common import (
     calculate_interval_for_show_all_filter
 )
 
-EL_HOST = "http://%s:%s" % (os.environ['ELASTICSEARCH_HOST'], os.environ['ELASTICSEARCH_PORT'])
+EL_HOST = f"http://{os.environ['ELASTICSEARCH_HOST']}:{os.environ['ELASTICSEARCH_PORT']}"
+
 http_auth = None
 
 if 'ELASTICSEARCH_USER' in os.environ:
@@ -142,7 +143,7 @@ class GroupByParams:
         if not fieldname:
             return self.filters
 
-        if querytype == "term" or querytype == "terms":
+        if querytype in ["term", "terms"]:
             filter = {
                 querytype: {
                     fieldname: value
@@ -178,17 +179,15 @@ class GroupByParams:
         return query
 
     def _build_aggs_query(self, aggsname, fieldname, aggs_type, aggs_options):
-        query = {}
         field_query = {}
         if fieldname:
             field_query["field"] = fieldname  # Some aggs type like top_hits doesn't have fieldname
 
-        field_query.update(aggs_options or {})
+        field_query |= (aggs_options or {})
         aggs_type_query = {
             aggs_type: field_query
         }
-        query[aggsname] = aggs_type_query
-        return query
+        return {aggsname: aggs_type_query}
 
     def prepare_aggs_query(self, aggs_name, sub_aggs_name=None):
         if self._aggs_params:
@@ -304,18 +303,19 @@ class ESConn:
         """
         Create a new document.
         """
-        res = EL_CLIENT.index(index=index_name, body=doc, refresh=refresh, pipeline=pipeline)
-        return res
+        return EL_CLIENT.index(
+            index=index_name, body=doc, refresh=refresh, pipeline=pipeline
+        )
 
     @staticmethod
     def get_doc_by_id(index_name, doc_id):
-        res = EL_CLIENT.get(index=index_name, id=doc_id)
-        return res
+        return EL_CLIENT.get(index=index_name, id=doc_id)
 
     @staticmethod
     def del_doc_by_id(index_name, doc_type, rec_id, refresh='false'):
-        res = EL_CLIENT.delete(index=index_name, doc_type=doc_type, id=rec_id, refresh=refresh)
-        return res
+        return EL_CLIENT.delete(
+            index=index_name, doc_type=doc_type, id=rec_id, refresh=refresh
+        )
 
     @staticmethod
     def overwrite_doc_having_id(index_name, doc, doc_id):
@@ -327,8 +327,7 @@ class ESConn:
          {"name":"John Lee","county":"US","_id":1}
         If record not exist it will be the doc with doc_id as _id.
         """
-        res = EL_CLIENT.index(index=index_name, id=doc_id, body=doc)
-        return res
+        return EL_CLIENT.index(index=index_name, id=doc_id, body=doc)
 
     @staticmethod
     def get_index_aliases(index_name: str):
@@ -347,15 +346,15 @@ class ESConn:
         total_pages = math.ceil(scroll_size / page_size)
         page_counter = 0
         if debug:
-            print('Total items : {}'.format(scroll_size))
-            print('Total pages : {}'.format(math.ceil(scroll_size / page_size)))
+            print(f'Total items : {scroll_size}')
+            print(f'Total pages : {math.ceil(scroll_size / page_size)}')
         # Start scrolling
         while (scroll_size > 0):
             # Get the number of results that we returned in the last scroll
             scroll_size = len(page['hits']['hits'])
             if scroll_size > 0:
                 if debug:
-                    print('> Scrolling page {} : {} items'.format(page_counter, scroll_size))
+                    print(f'> Scrolling page {page_counter} : {scroll_size} items')
                 yield total_pages, page_counter, scroll_size, page
             # get next page
             page = EL_CLIENT.scroll(scroll_id=sid, scroll=scroll)
@@ -387,15 +386,14 @@ class ESConn:
 
         """
         result = ESConn.search_by_and_clause(index_name, {"_id": doc_id}, 0)
-        if result['total']['value']:
-            assert result['total']['value'] == 1
-            existing_data = result['hits'][0]['_source']
-            existing_data.update(doc)
-            res = EL_CLIENT.index(index=index_name, id=doc_id, body=existing_data, refresh=refresh)
-
-        else:
-            res = EL_CLIENT.index(index=index_name, id=doc_id, body=doc, refresh=refresh)
-        return res
+        if not result['total']['value']:
+            return EL_CLIENT.index(index=index_name, id=doc_id, body=doc, refresh=refresh)
+        assert result['total']['value'] == 1
+        existing_data = result['hits'][0]['_source']
+        existing_data.update(doc)
+        return EL_CLIENT.index(
+            index=index_name, id=doc_id, body=existing_data, refresh=refresh
+        )
 
     @staticmethod
     def search_by_and_clause(index_name, filters, start_index=0, sort_order="desc", number=None,
@@ -422,14 +420,14 @@ class ESConn:
                 if type(value[0]) in [float, int]:
                     and_terms.append({"terms": {key: value}})
                 else:
-                    and_terms.append({"terms": {key + ".keyword": value}})
+                    and_terms.append({"terms": {f"{key}.keyword": value}})
         if not must_not_filters:
             must_not_filters = {}
         for key, value in must_not_filters.items():
             if type(value) is not list:
                 value = [value]
             if value:
-                and_terms_must_not.append({"terms": {key + ".keyword": value}})
+                and_terms_must_not.append({"terms": {f"{key}.keyword": value}})
 
         if number and time_unit and time_unit != 'all':
             rounding_time_unit = get_rounding_time_unit(time_unit)
@@ -485,24 +483,19 @@ class ESConn:
         res = EL_CLIENT.search(index=index_name, body=query, sort=sort, ignore=[400],
                                _source=_source)
 
-        if 'error' in res:
-            return {
-                'hits': [],
-                'total': {'value': 0}
-            }
-        return res['hits']
+        return (
+            {'hits': [], 'total': {'value': 0}} if 'error' in res else res['hits']
+        )
 
     @staticmethod
     def search(index_name, body, start_index, size, _source=None):
         q = {"from": start_index, "size": size}
         body.update(q)
-        res = EL_CLIENT.search(index=index_name, body=body, _source=_source)
-        return res
+        return EL_CLIENT.search(index=index_name, body=body, _source=_source)
 
     @staticmethod
     def msearch(body):
-        res = EL_CLIENT.msearch(body=body)
-        return res
+        return EL_CLIENT.msearch(body=body)
 
     @staticmethod
     def mget(body, _source=None):
@@ -521,16 +514,18 @@ class ESConn:
             if type(value) is not list:
                 value = [value]
             if value:
-                and_terms.append({"terms": {key + ".keyword": value}})
+                and_terms.append({"terms": {f"{key}.keyword": value}})
         if number and time_unit and time_unit != 'all':
             rounding_time_unit = get_rounding_time_unit(time_unit)
             and_terms.append(
                 {"range": {"@timestamp": {"gt": "now-{0}{1}/{2}".format(number, time_unit, rounding_time_unit)}}})
         if lucene_query_string:
             and_terms.append({"bool": {"must": {"query_string": {"query": lucene_query_string}}}})
-        query = {
-            "from": start_index, "query": {"constant_score": {"filter": {"bool": {"must": and_terms}}}}, "size": size}
-        return query
+        return {
+            "from": start_index,
+            "query": {"constant_score": {"filter": {"bool": {"must": and_terms}}}},
+            "size": size,
+        }
 
     @staticmethod
     def aggr(index_name, field_name, filters=None, number=None,
@@ -543,7 +538,7 @@ class ESConn:
             if type(value) is not list:
                 value = [value]
             if value:
-                and_terms.append({"terms": {key + ".keyword": value}})
+                and_terms.append({"terms": {f"{key}.keyword": value}})
 
         if number and time_unit and time_unit != 'all':
             rounding_time_unit = get_rounding_time_unit(time_unit)
@@ -567,15 +562,14 @@ class ESConn:
             "aggs": {
                 aggr_name: {
                     "terms": {
-                        "field": field_name + ".keyword",
+                        "field": f"{field_name}.keyword",
                         "size": size,
-                        "order": {
-                            "_count": "desc"
-                        }
+                        "order": {"_count": "desc"},
                     }
                 }
-            }
+            },
         }
+
 
         if and_terms:
             query = {
@@ -585,9 +579,7 @@ class ESConn:
             }
             body["query"] = query
 
-        res = ESConn.search(index_name, body, 0, 0)
-
-        if res:
+        if res := ESConn.search(index_name, body, 0, 0):
             aggr_res = res.get('aggregations')
         else:
             return {}
@@ -616,7 +608,7 @@ class ESConn:
             if type(value) is not list:
                 value = [value]
             if value:
-                and_terms.append({"terms": {key + ".keyword": value}})
+                and_terms.append({"terms": {f"{key}.keyword": value}})
 
         if number is not None and time_unit:
             rounding_time_unit = get_rounding_time_unit(time_unit)
@@ -645,13 +637,12 @@ class ESConn:
 
             value = {
                 "terms": {
-                    "field": field_name + ".keyword",
+                    "field": f"{field_name}.keyword",
                     "size": size,
-                    "order": {
-                        "_count": "desc"
-                    }
+                    "order": {"_count": "desc"},
                 }
             }
+
 
             aggs[aggr_name] = value
 
@@ -701,11 +692,7 @@ class ESConn:
 
         for field_name in field_names:
             aggr_name = field_name
-            aggs[aggr_name] = {
-                'cardinality': {
-                    'field': field_name + ".keyword"
-                }
-            }
+            aggs[aggr_name] = {'cardinality': {'field': f"{field_name}.keyword"}}
 
         body = {
             "size": 0,
@@ -715,13 +702,7 @@ class ESConn:
         must_objects = []
 
         if filters:
-            for k, v in filters.items():
-                must_objects.append({
-                    'term': {
-                        k + ".keyword": v
-                    }
-                })
-
+            must_objects.extend({'term': {f"{k}.keyword": v}} for k, v in filters.items())
         if number is not None and time_unit:
             rounding_time_unit = get_rounding_time_unit(time_unit)
             must_objects.append({
@@ -768,21 +749,17 @@ class ESConn:
         """
         Get the count of the documents matching the field name and value.
         """
-        must_objects = list()
+        must_objects = []
 
         for field_name, field_value in filters.items():
             if type(field_value) is not list:
                 field_value = [field_value]
             if field_value:
-                has_int = False
-                for field_val in field_value:
-                    if type(field_val) == int:
-                        has_int = True
-                        break
+                has_int = any(type(field_val) == int for field_val in field_value)
                 if has_int:
                     must_objects.append({"terms": {field_name: field_value}})
                 else:
-                    must_objects.append({"terms": {field_name + ".keyword": field_value}})
+                    must_objects.append({"terms": {f"{field_name}.keyword": field_value}})
 
         if number and time_unit and time_unit != 'all':
             rounding_time_unit = get_rounding_time_unit(time_unit)
@@ -980,12 +957,12 @@ class ESConn:
                     recent_action = max(node_aggr["action"]["buckets"],
                                         key=lambda x: x["action_max_timestamp"]["value"])
                     cve_scan_message = ""
-                    cve_scan_messages = recent_action["cve_scan_message"]["buckets"]
-                    if cve_scan_messages:
+                    if cve_scan_messages := recent_action["cve_scan_message"][
+                        "buckets"
+                    ]:
                         cve_scan_message = cve_scan_messages[-1]["key"]
                     scan_id = ""
-                    scan_id_buckets = recent_action["scan_id"]["buckets"]
-                    if scan_id_buckets:
+                    if scan_id_buckets := recent_action["scan_id"]["buckets"]:
                         scan_id = scan_id_buckets[-1]["key"]
                     response[host_aggr["key"]][node_aggr["key"]] = {
                         "action": recent_action["key"], "timestamp": recent_action["action_max_timestamp"]["value"],
@@ -1033,14 +1010,14 @@ class ESConn:
                 if type(value[0]) in [float, int]:
                     and_terms.append({"terms": {key: value}})
                 else:
-                    and_terms.append({"terms": {key + ".keyword": value}})
+                    and_terms.append({"terms": {f"{key}.keyword": value}})
         if not must_not_filters:
             must_not_filters = {}
         for key, value in must_not_filters.items():
             if type(value) is not list:
                 value = [value]
             if value:
-                and_terms_must_not.append({"terms": {key + ".keyword": value}})
+                and_terms_must_not.append({"terms": {f"{key}.keyword": value}})
         if time_unit != 'all':
             rounding_time_unit = get_rounding_time_unit(time_unit)
             and_terms.append({
@@ -1069,13 +1046,7 @@ class ESConn:
 
         must_objects = []
         if filters:
-            for k, v in filters.items():
-                must_objects.append({
-                    'term': {
-                        k + ".keyword": v
-                    }
-                })
-
+            must_objects.extend({'term': {f"{k}.keyword": v}} for k, v in filters.items())
         must_objects.append({
             "range": {
                 "@timestamp": {
@@ -1091,14 +1062,13 @@ class ESConn:
             "aggs": {
                 aggr_name: {
                     "terms": {
-                        "field": field_name + ".keyword",
-                        "order": {
-                            "_count": "desc"
-                        }
+                        "field": f"{field_name}.keyword",
+                        "order": {"_count": "desc"},
                     }
                 }
-            }
+            },
         }
+
 
         if must_objects:
             query = {
@@ -1109,9 +1079,7 @@ class ESConn:
             body["query"] = query
 
         start_index = 0
-        res = ESConn.search(index_name, body, start_index, 10)
-
-        if res:
+        if res := ESConn.search(index_name, body, start_index, 10):
             aggr_res = res.get('aggregations')
         else:
             return {}
@@ -1141,7 +1109,6 @@ class ESConn:
     @staticmethod
     def aggregation_helper(index_name, filters, aggs, number=None, time_unit=None,
                            lucene_query_string=None, add_masked_filter=True, get_only_query=False):
-        should_objects = []
         range_query = None
         if number and time_unit and time_unit != 'all':
             rounding_time_unit = get_rounding_time_unit(time_unit)
@@ -1172,16 +1139,13 @@ class ESConn:
             if type(value) is not list:
                 value = [value]
             if value:
-                and_terms.append({"terms": {key + ".keyword": value}})
+                and_terms.append({"terms": {f"{key}.keyword": value}})
         if range_query:
             and_terms.append(range_query)
         if lucene_query:
             and_terms.append(lucene_query)
-        should_objects.append({
-            "bool": {
-                "must": and_terms
-            }
-        })
+        should_objects = [{"bool": {"must": and_terms}}]
+
         aggs_query = {
             "query": {
                 "constant_score": {
@@ -1235,10 +1199,8 @@ class ESConn:
         range_query = groupbyparam.prepare_range_query('@timestamp')
         if range_query.get("range", {}).get("@timestamp"):
             and_terms.append(range_query)
-        filter_query = groupbyparam.prepare_filter_query()
-        if filter_query:
-            for filters in filter_query:
-                and_terms.append(filters)
+        if filter_query := groupbyparam.prepare_filter_query():
+            and_terms.extend(iter(filter_query))
         not_filter_query = groupbyparam.prepare_not_filter_query()
         should_object = {"bool": {"must": and_terms}}
         if not_filter_query:
@@ -1255,12 +1217,10 @@ class ESConn:
         }
         body["query"] = query
         start_index = 0
-        res = ESConn.search(index_name, body, start_index, size)
-        if res:
-            aggr_res = res.get('aggregations', {})
-            aggr_res.update({"_total_doc_count": res.get('hits', {}).get('total', {}).get('value', 0)})
-        else:
+        if not (res := ESConn.search(index_name, body, start_index, size)):
             return {}
+        aggr_res = res.get('aggregations', {})
+        aggr_res.update({"_total_doc_count": res.get('hits', {}).get('total', {}).get('value', 0)})
         return aggr_res
 
     @staticmethod
@@ -1290,8 +1250,7 @@ class ESConn:
     @staticmethod
     def index_put_settings(index, body):
         idxClient = IndicesClient(EL_CLIENT)
-        response = idxClient.put_settings(index=index, body=body)
-        return response
+        return idxClient.put_settings(index=index, body=body)
 
     @staticmethod
     def bulk_update_docs_improved(docs, print_failures=False):

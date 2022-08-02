@@ -24,11 +24,11 @@ def get_topology_cve_status(node_type, taglist_filter):
         # fetch current container nodes.
         # filter out uncontained and internet nodes
         topology_data = {}
-        if node_type == TOPOLOGY_ID_CONTAINER or node_type == 'all':
+        if node_type in [TOPOLOGY_ID_CONTAINER, 'all']:
             # fetch current container nodes.
             # filter out uncontained and internet nodes
             topology_data.update(fetch_topology_data(NODE_TYPE_CONTAINER))
-        if node_type == TOPOLOGY_ID_CONTAINER_IMAGE or node_type == 'all':
+        if node_type in [TOPOLOGY_ID_CONTAINER_IMAGE, 'all']:
             topology_data.update(fetch_topology_data(NODE_TYPE_CONTAINER_IMAGE))
         # TODO: read deepfence format
         if len(taglist_filter) > 0:
@@ -43,14 +43,16 @@ def get_topology_cve_status(node_type, taglist_filter):
             map(
                 lambda id: {
                     "meta_list": filter(
-                        lambda meta: meta.get('id') == "docker_image_tag" or meta.get('id') == "docker_image_name",
-                        filtered_topology_data[id].get('metadata', [])
+                        lambda meta: meta.get('id')
+                        in ["docker_image_tag", "docker_image_name"],
+                        filtered_topology_data[id].get('metadata', []),
                     ),
-                    "node_id": id
+                    "node_id": id,
                 },
-                filtered_topology_data
+                filtered_topology_data,
             )
         )
+
 
         # reduce image name and image tag into one string by concatination
         def reduce_handler(acc, meta):
@@ -58,22 +60,26 @@ def get_topology_cve_status(node_type, taglist_filter):
             return acc.strip(":")
 
         # creating list of {image_name, node_id} for each container node
-        node_list = node_list + list(
+        node_list += list(
             map(
                 lambda meta: {
                     "image_name": reduce(
                         reduce_handler,
-                        sorted(meta.get('meta_list'), key=lambda el: el.get('priority'),
-                               reverse=True if node_type == TOPOLOGY_ID_CONTAINER else False),
-                        ""
+                        sorted(
+                            meta.get('meta_list'),
+                            key=lambda el: el.get('priority'),
+                            reverse=node_type == TOPOLOGY_ID_CONTAINER,
+                        ),
+                        "",
                     ),
                     "node_id": meta.get('node_id'),
                 },
-                node_image_meta
+                node_image_meta,
             )
         )
 
-    if node_type == TOPOLOGY_ID_HOST or node_type == 'all':
+
+    if node_type in [TOPOLOGY_ID_HOST, 'all']:
         topology_data = fetch_topology_data(NODE_TYPE_HOST)
         # TODO: read deepfence format
         if len(taglist_filter) > 0:
@@ -98,20 +104,23 @@ def get_topology_cve_status(node_type, taglist_filter):
             filtered_topology.append(node)
 
         # creating list of {image_name, node_id} for each host node
-        node_list = node_list + list(
+        node_list += list(
             map(
                 lambda node: {
                     "image_name": reduce(
-                        lambda acc, hostname_meta: hostname_meta.get('value'), filter(
+                        lambda acc, hostname_meta: hostname_meta.get('value'),
+                        filter(
                             lambda meta: meta.get('id') == "host_name",
-                            node.get('metadata', [])
-                        ), ""
+                            node.get('metadata', []),
+                        ),
+                        "",
                     ),
-                    "node_id": node.get('id')
+                    "node_id": node.get('id'),
                 },
-                filtered_topology
+                filtered_topology,
             )
         )
+
 
     # create an index for mapping node_id and image_name
     def node_index_handler(acc, node):

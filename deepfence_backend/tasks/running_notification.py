@@ -9,16 +9,23 @@ from utils.helper import pretty_date, get_deepfence_container_state, get_deepfen
 @celery_app.task(bind=True, default_retry_delay=60)
 def deepfence_health_notification(*args):
     try:
-        deepfence_health = ""
         container_state, ok = get_deepfence_container_state()
         if not ok:
             print("Failed to get Deepfence container state")
             return
-        for containerID, value in container_state.items():
-            if value.get("Restarting", False) or value.get("Paused", False) or value.get("OOMKilled", False) or \
-                    value.get("Dead", False) or not value.get("Running", True):
-                deepfence_health = "Deepfence component failure. Contact customer support"
-                break
+        deepfence_health = next(
+            (
+                "Deepfence component failure. Contact customer support"
+                for containerID, value in container_state.items()
+                if value.get("Restarting", False)
+                or value.get("Paused", False)
+                or value.get("OOMKilled", False)
+                or value.get("Dead", False)
+                or not value.get("Running", True)
+            ),
+            "",
+        )
+
         content = deepfence_health
         source_application_id = "deepfence_health_notification"
 
@@ -29,10 +36,15 @@ def deepfence_health_notification(*args):
         try:
             resp = requests.post(url="http://deepfence-api:9997/running_notification", json=params)
         except Exception as e:
-            print("Something went wrong while performing running notification POST call: Err: {}".format(e))
+            print(
+                f"Something went wrong while performing running notification POST call: Err: {e}"
+            )
+
 
     except Exception as e:
-        print("Something went wrong during deepfence_health_notification task execution: Err: {}".format(e))
+        print(
+            f"Something went wrong during deepfence_health_notification task execution: Err: {e}"
+        )
 
 
 @celery_app.task(bind=True, default_retry_delay=60)
@@ -46,18 +58,18 @@ def deepfence_console_host_stats(*args):
         for resource, value in console_host_stats.items():
             if resource == "cpu":
                 if value <= 75.0:
-                    message += "CPU Safe Value {} ,".format(str(value))
-                elif value > 75.0 and value <= 90.0:
-                    message += "CPU Warning Value {} ,".format(str(value))
+                    message += f"CPU Safe Value {str(value)} ,"
+                elif value <= 90.0:
+                    message += f"CPU Warning Value {str(value)} ,"
                 else:
-                    message += "CPU Critical Value {} ,".format(str(value))
+                    message += f"CPU Critical Value {str(value)} ,"
             elif resource == "memory":
                 if value <= 75.0:
-                    message += "Memory Safe Value {} ,".format(str(value))
-                elif value > 75.0 and value <= 90.0:
-                    message += "Memory Warning Value {} ,".format(str(value))
+                    message += f"Memory Safe Value {str(value)} ,"
+                elif value <= 90.0:
+                    message += f"Memory Warning Value {str(value)} ,"
                 else:
-                    message += "Memory Critical Value {} ,".format(str(value))
+                    message += f"Memory Critical Value {str(value)} ,"
         content = message
         source_application_id = "deepfence_console_resource_usage_notification"
         params = {
@@ -67,9 +79,9 @@ def deepfence_console_host_stats(*args):
         try:
             resp = requests.post(url="http://deepfence-api:9997/running_notification", json=params)
         except Exception as ex:
-            print("Could not send message to the task. Reason: {}".format(ex))
+            print(f"Could not send message to the task. Reason: {ex}")
     except Exception as ex:
-        print("Something went wrong when running the task. Reason: {}".format(ex))
+        print(f"Something went wrong when running the task. Reason: {ex}")
 
 
 @celery_app.task(bind=True, default_retry_delay=60)
@@ -81,14 +93,8 @@ def cve_db_update_notification(*args):
         fetcher_db_host = os.getenv('POSTGRES_FETCHER_DB_HOST')
         fetcher_db_port = os.getenv('POSTGRES_FETCHER_DB_PORT')
         fetcher_db_sslmode = os.getenv('POSTGRES_FETCHER_DB_SSLMODE')
-        dsn = "dbname={} user={} password={} host={} port={} sslmode={}".format(
-            fetcher_db_name,
-            fetcher_db_user,
-            fetcher_db_password,
-            fetcher_db_host,
-            fetcher_db_port,
-            fetcher_db_sslmode,
-        )
+        dsn = f"dbname={fetcher_db_name} user={fetcher_db_user} password={fetcher_db_password} host={fetcher_db_host} port={fetcher_db_port} sslmode={fetcher_db_sslmode}"
+
         conn = psycopg2.connect(dsn)
         cursor = conn.cursor()
         cursor.execute("select value from keyvalue where key='updater/last'")
@@ -96,7 +102,10 @@ def cve_db_update_notification(*args):
         cve_db_update_status = ""
         if last_update_timestamp:
             updated_time = datetime.fromtimestamp(int(last_update_timestamp))
-            cve_db_update_status = "Threat Intel feeds updated {}".format(pretty_date(updated_time))
+            cve_db_update_status = (
+                f"Threat Intel feeds updated {pretty_date(updated_time)}"
+            )
+
         content = cve_db_update_status
         source_application_id = "cve_db_update_notification"
 
@@ -109,4 +118,4 @@ def cve_db_update_notification(*args):
         except Exception as e:
             print(e)
     except Exception as ex:
-        print('Failed to run task cve_db_update_notification: {}'.format(ex))
+        print(f'Failed to run task cve_db_update_notification: {ex}')

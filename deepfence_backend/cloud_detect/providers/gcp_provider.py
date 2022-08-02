@@ -34,9 +34,7 @@ class GCPProvider(AbstractProvider):
                 self.metadata_url,
                 headers=self.headers,
             )
-            if response.status_code != 200:
-                return False
-            return True
+            return response.status_code == 200
         except requests.exceptions.RequestException as e:  # noqa: F841
             return False
 
@@ -46,7 +44,4 @@ class GCPProvider(AbstractProvider):
         """
         self.logger.debug('Checking GCP vendor file')
         gcp_path = Path(self.vendor_file)
-        if gcp_path.is_file():
-            if 'Google' in open(self.vendor_file).read():
-                return True
-        return False
+        return bool(gcp_path.is_file() and 'Google' in open(self.vendor_file).read())

@@ -61,7 +61,7 @@ def run_node_task(action, node_action_details, scheduler_id=None):
                 registry_credential = RegistryCredential.query.get(
                     node_action_details["registry_images"]["registry_id"])
             except Exception as ex:
-                save_scheduled_task_status("Error: " + str(ex))
+                save_scheduled_task_status(f"Error: {str(ex)}")
                 app.logger.error(ex)
                 return
         else:
@@ -71,16 +71,20 @@ def run_node_task(action, node_action_details, scheduler_id=None):
                 try:
                     redis_pipe = redis.pipeline()
                     redis_pipe.hgetall(constants.DF_ID_TO_SCOPE_ID_REDIS_KEY_PREFIX + node_type.upper())
-                    redis_pipe.get(websocketio_channel_name_format(node_type + "?format=deepfence")[1])
+                    redis_pipe.get(
+                        websocketio_channel_name_format(
+                            f"{node_type}?format=deepfence"
+                        )[1]
+                    )
+
                     redis_resp = redis_pipe.execute()
                     df_id_to_scope_id_map = redis_resp[0]
                     if redis_resp[1]:
                         topology_data_df_format = json.loads(redis_resp[1])
                     if topology_data_df_format and df_id_to_scope_id_map:
                         break
-                    else:
-                        app.logger.error("topology data is empty, retrying")
-                        time.sleep(10)
+                    app.logger.error("topology data is empty, retrying")
+                    time.sleep(10)
                 except Exception as ex:
                     app.logger.error(ex)
                     time.sleep(10)
@@ -101,11 +105,18 @@ def run_node_task(action, node_action_details, scheduler_id=None):
                         if redis_resp[i] != 1:
                             continue
                         cve_status = image_cve_status.get(image_name_with_tag, {}).get("action", "")
-                        if cve_status:
-                            if cve_status == constants.CVE_SCAN_STATUS_QUEUED or cve_status in constants.CVE_SCAN_RUNNING_STATUS:
-                                continue
+                        if cve_status and (
+                            cve_status == constants.CVE_SCAN_STATUS_QUEUED
+                            or cve_status in constants.CVE_SCAN_RUNNING_STATUS
+                        ):
+                            continue
                         datetime_now = datetime.now()
-                        scan_id = image_name_with_tag + "_" + datetime_now.strftime("%Y-%m-%dT%H:%M:%S") + ".000"
+                        scan_id = (
+                            f"{image_name_with_tag}_"
+                            + datetime_now.strftime("%Y-%m-%dT%H:%M:%S")
+                            + ".000"
+                        )
+
                         body = {
                             "masked": "false", "type": constants.CVE_SCAN_LOGS_INDEX, "scan_id": scan_id, "host": "",
                             "@timestamp": datetime_now.strftime("%Y-%m-%dT%H:%M:%S.%fZ"), "cve_scan_message": "",
@@ -117,12 +128,12 @@ def run_node_task(action, node_action_details, scheduler_id=None):
                             "cve_node_id": image_name_with_tag, "scan_types": node_action_details["scan_type"],
                             "registry_type": registry_credential.registry_type, "scan_id": scan_id,
                             "credential_id": registry_credential.id}
-                        celery_task_id = "cve_scan:" + scan_id
+                        celery_task_id = f"cve_scan:{scan_id}"
                         celery_app.send_task('tasks.vulnerability_scan_worker.vulnerability_scan', args=(),
                                              task_id=celery_task_id, kwargs={"scan_details": scan_details},
                                              queue=constants.VULNERABILITY_SCAN_QUEUE)
                     except Exception as ex:
-                        save_scheduled_task_status("Error: " + str(ex))
+                        save_scheduled_task_status(f"Error: {str(ex)}")
                         app.logger.error(ex)
                 time.sleep(2)
                 redis_pipe = redis.pipeline()
@@ -150,11 +161,11 @@ def run_node_task(action, node_action_details, scheduler_id=None):
                         redis_pipe.incr(lock_key)
                         node_list.append(node)
                     except Exception as ex:
-                        save_scheduled_task_status("Error: " + str(ex))
+                        save_scheduled_task_status(f"Error: {str(ex)}")
                         app.logger.error(ex)
                 if not node_list:
                     error_message = "No node available for scan"
-                    save_scheduled_task_status("Error: " + error_message)
+                    save_scheduled_task_status(f"Error: {error_message}")
                     app.logger.error(error_message)
                     return
                 redis_resp = redis_pipe.execute()
@@ -164,7 +175,7 @@ def run_node_task(action, node_action_details, scheduler_id=None):
                     try:
                         node.cve_scan_start(node_action_details["scan_type"])
                     except Exception as ex:
-                        save_scheduled_task_status("Error: " + str(ex))
+                        save_scheduled_task_status(f"Error: {str(ex)}")
                         app.logger.error(ex)
                 time.sleep(1)
                 redis_pipe = redis.pipeline()
@@ -190,7 +201,7 @@ def run_node_task(action, node_action_details, scheduler_id=None):
                                 continue
                             elif status != constants.CVE_SCAN_STATUS_QUEUED:
                                 continue
-                            celery_task_id = "cve_scan:" + scan_id
+                            celery_task_id = f"cve_scan:{scan_id}"
                             celery_app.control.revoke(celery_task_id, terminate=False)
                             body = {
                                 "masked": "false", "type": constants.CVE_SCAN_LOGS_INDEX, "scan_id": scan_id,
@@ -202,7 +213,7 @@ def run_node_task(action, node_action_details, scheduler_id=None):
                             }
                             ESConn.create_doc(constants.CVE_SCAN_LOGS_INDEX, body)
                     except Exception as ex:
-                        save_scheduled_task_status("Error: " + str(ex))
+                        save_scheduled_task_status(f"Error: {str(ex)}")
                         app.logger.error(ex)
             else:
                 for node_id in node_action_details["node_id_list"]:
@@ -211,14 +222,16 @@ def run_node_task(action, node_action_details, scheduler_id=None):
                                     topology_data_df_format=topology_data_df_format)
                         node.cve_scan_stop()
                     except Exception as ex:
-                        save_scheduled_task_status("Error: " + str(ex))
+                        save_scheduled_task_status(f"Error: {str(ex)}")
                         app.logger.error(ex)
         elif action in [constants.NODE_ACTION_DOWNLOAD_REPORT, constants.NODE_ACTION_SCHEDULE_SEND_REPORT]:
             action_details = deepcopy(node_action_details)
-            if action_details.get('include_dead_nodes') is True:
-                if node_type == 'host':
-                    if len(action_details['filters']['host_name']) == 0:
-                        action_details['filters']['host_name'] = get_all_scanned_node()
+            if (
+                action_details.get('include_dead_nodes') is True
+                and node_type == 'host'
+                and len(action_details['filters']['host_name']) == 0
+            ):
+                action_details['filters']['host_name'] = get_all_scanned_node()
             xlsx_buffer = prepare_report_download(
                 node_type, action_details.get("filters", {}), action_details.get("resources", []),
                 action_details.get("duration", {}), action_details.get("include_dead_nodes", False))
@@ -228,7 +241,7 @@ def run_node_task(action, node_action_details, scheduler_id=None):
                 email_html = prepare_report_email_body(
                     node_type, action_details_copy.get("filters", {}), action_details_copy.get("resources", []),
                     action_details_copy.get("duration", {}))
-                    
+
                 from tasks.email_sender import send_email_with_attachment
                 send_email_with_attachment(
                     recipients=[node_action_details["report_email"]], attachment=xlsx_obj,

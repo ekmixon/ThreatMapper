@@ -24,7 +24,7 @@ def initialize():
 
     if DFCluster.query.count() == 0:
         df_cluster_id = getnode()
-        print('Created df_cluster_id {}'.format(df_cluster_id))
+        print(f'Created df_cluster_id {df_cluster_id}')
         df_cluster = DFCluster(id=df_cluster_id)
         df_cluster.save()
 

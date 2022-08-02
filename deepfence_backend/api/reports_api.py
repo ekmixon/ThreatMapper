@@ -26,7 +26,7 @@ def get_detailed_report_api():
         except ValueError:
             raise InvalidUsage("Number should be an integer value.")
 
-    if bool(number is not None) ^ bool(time_unit):
+    if (number is not None) ^ bool(time_unit):
         raise InvalidUsage("Require both number and time_unit or ignore both of them.")
 
     if time_unit and time_unit not in TIME_UNIT_MAPPING.keys():
@@ -82,7 +82,6 @@ def get_detailed_report_api_status():
     es_response = ESConn.group_by(param, None)
     data = []
     for ele in es_response['status']['buckets']:
-        for info in ele['document']['hits']['hits']:
-            data.append(info['_source'])
+        data.extend(info['_source'] for info in ele['document']['hits']['hits'])
     data = sorted(data, key=lambda k: k["@timestamp"], reverse=True)
     return set_response(data=data)

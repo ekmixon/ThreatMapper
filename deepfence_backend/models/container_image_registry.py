@@ -131,12 +131,13 @@ class RegistryCredential(db.Model):
 
         all_fields = self.fields.get(registry_type, [])
         if len(all_fields) == 0:
-            raise DFError("Invalid registry type {}".format(registry_type))
+            raise DFError(f"Invalid registry type {registry_type}")
         non_mandatory_fields = self.non_mandatory_fields.get(registry_type, [])
         for field in all_fields:
-            if field not in non_mandatory_fields:
-                if credentials.get(field) is None or credentials.get(field) == "":
-                    raise DFError("{} is mandatory".format(field))
+            if field not in non_mandatory_fields and (
+                credentials.get(field) is None or credentials.get(field) == ""
+            ):
+                raise DFError(f"{field} is mandatory")
 
     def initialize_client(self):
         # client initialization based on registry type
@@ -184,29 +185,23 @@ class RegistryCredential(db.Model):
                                                       credentials.get('jfrog_username'),
                                                       credentials.get('jfrog_password'))
         else:
-            raise DFError("Registry {} not supported".format(registry_type))
+            raise DFError(f"Registry {registry_type} not supported")
 
     def encrypt_secret(self, value):
-        encrypted_secret = ""
-        if type(value) == str and len(value) > 0:
-            encrypted_secret = encrypt(value)
-        return encrypted_secret
+        return encrypt(value) if type(value) == str and len(value) > 0 else ""
 
     def decrypt_secret(self, value):
-        if type(value) == str and len(value) > 0:
-            return decrypt(value)
-        return ""
+        return decrypt(value) if type(value) == str and len(value) > 0 else ""
 
     @property
     def secret(self):
         """
         returns decrypted secret
         """
-        decrypted_dict = {}
-        for key, encrypted_value in self._encrypted_secret.items():
-            decrypted_dict[key] = self.decrypt_secret(encrypted_value)
-
-        return decrypted_dict
+        return {
+            key: self.decrypt_secret(encrypted_value)
+            for key, encrypted_value in self._encrypted_secret.items()
+        }
 
     @secret.setter
     def secret(self, value_dict):
@@ -222,7 +217,7 @@ class RegistryCredential(db.Model):
         registry_type = self.registry_type
         allowed_fields = self.fields.get(registry_type, [])
         if len(allowed_fields) == 0:
-            raise DFError("Invalid registry type {}".format(registry_type))
+            raise DFError(f"Invalid registry type {registry_type}")
 
         encrypted_dict = {}
         for key, value in value_dict.items():
@@ -230,7 +225,7 @@ class RegistryCredential(db.Model):
                 raise DFError("{} value should be of type str")
 
             if len(value) == 0:
-                raise DFError("{} value cannot be empty".format(key))
+                raise DFError(f"{key} value cannot be empty")
 
             if key in allowed_fields:
                 encrypted_dict[key] = self.encrypt_secret(value)
@@ -259,7 +254,7 @@ class RegistryCredential(db.Model):
                 raise DFError("{} value should be of type str")
 
             if len(value) == 0:
-                raise DFError("{} value cannot be empty".format(key))
+                raise DFError(f"{key} value cannot be empty")
 
             if key in allowed_fields:
                 encrypted_extras[key] = self.encrypt_secret(value)
@@ -281,7 +276,7 @@ class RegistryCredential(db.Model):
         registry_type = self.registry_type
         allowed_fields = self.fields.get(registry_type, [])
         if len(allowed_fields) == 0:
-            raise DFError("Invalid registry type {}".format(registry_type))
+            raise DFError(f"Invalid registry type {registry_type}")
 
         sanitized_dict = {key: value for key, value in value_dict.items() if key in allowed_fields}
         self._non_secret = sanitized_dict
@@ -293,8 +288,7 @@ class RegistryCredential(db.Model):
         """
         decrypted_secret = self.secret
         decrypted_secret.update(self.non_secret)
-        decrypted_extras = self.extras
-        if decrypted_extras:
+        if decrypted_extras := self.extras:
             decrypted_secret.update(decrypted_extras)
         return decrypted_secret
 
@@ -330,4 +324,4 @@ class RegistryCredential(db.Model):
                 raise
 
     def __repr__(self):
-        return "<RegistryCredential({}) {}>".format(self.registry_type, self.name)
+        return f"<RegistryCredential({self.registry_type}) {self.name}>"

@@ -17,10 +17,7 @@ def create_app(config_object):
     app = Flask(__name__)
     app.config.from_object(config_object)
     # Set log level.
-    if app.config['DEBUG']:
-        log_level = logging.DEBUG
-    else:
-        log_level = logging.INFO
+    log_level = logging.DEBUG if app.config['DEBUG'] else logging.INFO
     stream_handler = logging.StreamHandler()
 
     stream_handler.setFormatter(logging.Formatter(
@@ -109,13 +106,10 @@ def configure_jwt():
     def check_if_token_is_revoked(decrypted_token):
         jti = decrypted_token['jti']
         user_id = decrypted_token.get("identity").get("id") if decrypted_token.get("identity") else None
-        if user_id:
-            if redis.get("DELETED_USER_"+str(user_id)) == "true":
-                return True
-        entry = redis.get(jti)
-        if entry is None:
+        if user_id and redis.get(f"DELETED_USER_{str(user_id)}") == "true":
             return True
-        return entry == 'true'
+        entry = redis.get(jti)
+        return True if entry is None else entry == 'true'
 
 
 app, internal_app = create_app(ProdConfig)

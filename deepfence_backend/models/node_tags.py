@@ -47,4 +47,4 @@ class NodeTags(db.Model):
         }
 
     def __repr__(self):
-        return "<NodeTags {}".format(self.id)
+        return f"<NodeTags {self.id}"

@@ -56,11 +56,9 @@ def get_test_data_list():
           "SHORT STRING": u"1234567890" },
         { True: "true", 138: False, "false": 200 }
         ]
-    
-    l = []
-    l.extend(l0)
-    l.append(l0)
-    l.append(1)
+
+    l = list(l0)
+    l.extend((l0, 1))
     l.extend(l1)
     return l
 
@@ -69,21 +67,24 @@ def build_test_data(destdir):
     for i in range(len(l)):
         # packer = msgpack.Packer()
         serialized = msgpack.dumps(l[i])
-        f = open(os.path.join(destdir, str(i) + '.msgpack.golden'), 'wb')
-        f.write(serialized)
-        f.close()
+        with open(os.path.join(destdir, f'{str(i)}.msgpack.golden'), 'wb') as f:
+            f.write(serialized)
         serialized = cbor.dumps(l[i])
-        f = open(os.path.join(destdir, str(i) + '.cbor.golden'), 'wb')
-        f.write(serialized)
-        f.close()
+        with open(os.path.join(destdir, f'{str(i)}.cbor.golden'), 'wb') as f:
+            f.write(serialized)
 
 def doRpcServer(port, stopTimeSec):
+
+
+
     class EchoHandler(object):
         def Echo123(self, msg1, msg2, msg3):
-            return ("1:%s 2:%s 3:%s" % (msg1, msg2, msg3))
+            return f"1:{msg1} 2:{msg2} 3:{msg3}"
+
         def EchoStruct(self, msg):
-            return ("%s" % msg)
-    
+            return f"{msg}"
+
+
     addr = msgpackrpc.Address('127.0.0.1', port)
     server = msgpackrpc.Server(EchoHandler())
     server.listen(addr)

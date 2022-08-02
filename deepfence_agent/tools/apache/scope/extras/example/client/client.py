@@ -48,9 +48,10 @@ def main():
     logging.info("Starting %d threads, targeting %s", args.concurrency,
                  args.target)
     threads = [
-        threading.Thread(target=do_requests, args=(args, ))
-        for i in range(args.concurrency)
+        threading.Thread(target=do_requests, args=(args,))
+        for _ in range(args.concurrency)
     ]
+
     for thread in threads:
         thread.start()
     for thread in threads:

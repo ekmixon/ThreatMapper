@@ -59,11 +59,11 @@ class DFError(Exception):
         self.message = message
         self.code = code
         self.error = error
-        msg = "DFError: {}".format(message)
+        msg = f"DFError: {message}"
         if code and error:
-            msg = "DFError: {}:{} => {}".format(message, code, error)
+            msg = f"DFError: {message}:{code} => {error}"
         elif code:
-            msg = "DFError: {}:{}".format(message, code)
+            msg = f"DFError: {message}:{code}"
         elif error:
-            msg = "DFError: {} => {}".format(message, error)
+            msg = f"DFError: {message} => {error}"
         super(DFError, self).__init__(msg)

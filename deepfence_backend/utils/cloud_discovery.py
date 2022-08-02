@@ -54,8 +54,7 @@ class CloudDiscovery:
 
     def list_vms(self):
         table_name = self.table_prefix + STEAMPIPE_TABLES.get(CLOUD_VM).get(self.cloud_provider)[0]
-        output_json = self.execute_steampipe_query(table=table_name)
-        return output_json
+        return self.execute_steampipe_query(table=table_name)
 
     def list_nodes(self, node_type=None):
         if not node_type:
@@ -67,10 +66,10 @@ class CloudDiscovery:
         else:
             table_names = map(lambda x: self.table_prefix + x, STEAMPIPE_TABLES.get(node_type, {})
                               .get(self.cloud_provider, []))
-            output_json = {}
-            for table_name in table_names:
-                output_json[table_name] = self.execute_steampipe_query(table=table_name)
-            return output_json
+            return {
+                table_name: self.execute_steampipe_query(table=table_name)
+                for table_name in table_names
+            }
 
     def list_load_balancers(self):
         table_names = map(lambda x: self.table_prefix + x, STEAMPIPE_TABLES.get(CLOUD_LB, {})
@@ -90,12 +89,20 @@ class CloudDiscovery:
             columns = "*"
         if columns is list:
             columns = columns.join(",")
-        out = subprocess.check_output(['steampipe', 'query', '--output', 'json',
-                                       'select {} from {};'.format(columns, table)])
+        out = subprocess.check_output(
+            [
+                'steampipe',
+                'query',
+                '--output',
+                'json',
+                f'select {columns} from {table};',
+            ]
+        )
+
         try:
             j = json.loads(out)
         except Exception as ex:
-            print("Execution error in {} query:".format(table))
+            print(f"Execution error in {table} query:")
             print(ex)
             return []
         return j

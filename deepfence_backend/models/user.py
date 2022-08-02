@@ -40,13 +40,13 @@ class User(db.Model):
 
     @property
     def full_name(self):
-        return self.first_name + " " + self.last_name
+        return f"{self.first_name} {self.last_name}"
 
     def get_identity(self):
         """
         Use this to generate access token.
         """
-        user_identity = {
+        return {
             "id": self.id,
             "first_name": self.first_name,
             "last_name": self.last_name,
@@ -57,8 +57,6 @@ class User(db.Model):
             "isActive": self.isActive,
             "company_license_exists": True,
         }
-
-        return user_identity
 
     def save(self, commit=True):
         db.session.add(self)
@@ -91,7 +89,7 @@ class User(db.Model):
                 raise
 
     def __repr__(self):
-        return '<User {}>'.format(self.email)
+        return f'<User {self.email}>'
 
 
 class Role(db.Model):
@@ -117,7 +115,7 @@ class Role(db.Model):
                 raise
 
     def __repr__(self):
-        return '<Role {}>'.format(self.name)
+        return f'<Role {self.name}>'
 
 
 class Company(db.Model):
@@ -129,9 +127,7 @@ class Company(db.Model):
     def pre_save_checks(self):
         # There should be only one company
         count = Company.query.count()
-        if count == 0 and self.id is None:
-            return True
-        return False
+        return count == 0 and self.id is None
 
     def pre_save(self):
         """
@@ -143,7 +139,7 @@ class Company(db.Model):
         if not self.pre_save_checks():
             companies = Company.query.all()
             companies = [company.name for company in companies]
-            app.logger.error("Multiple companies found: [{}]".format(companies))
+            app.logger.error(f"Multiple companies found: [{companies}]")
             raise MultipleCompaniesFound()
 
         self.pre_save()
@@ -175,14 +171,14 @@ class Company(db.Model):
         """
         Get all admins of a company.
         """
-        admins = []
-        for user in self.users:
-            if user.isActive and user.role.name == USER_ROLES.ADMIN_USER:
-                admins.append(user)
-        return admins
+        return [
+            user
+            for user in self.users
+            if user.isActive and user.role.name == USER_ROLES.ADMIN_USER
+        ]
 
     def __repr__(self):
-        return '<Company {}>'.format(self.name)
+        return f'<Company {self.name}>'
 
 
 class Invite(db.Model):
@@ -227,13 +223,14 @@ class Invite(db.Model):
                 raise
 
     def is_expired(self):
-        if arrow.get(self.created_at).datetime \
-                + datetime.timedelta(seconds=INVITE_EXPIRY) < arrow.now().datetime:
-            return True
-        return False
+        return (
+            arrow.get(self.created_at).datetime
+            + datetime.timedelta(seconds=INVITE_EXPIRY)
+            < arrow.now().datetime
+        )
 
     def __repr__(self):
-        return '<Invite {}>'.format(self.id)
+        return f'<Invite {self.id}>'
 
 
 class PasswordReset(db.Model):
@@ -270,7 +267,7 @@ class PasswordReset(db.Model):
                 raise
 
     def __repr__(self):
-        return '<PasswordReset {}>'.format(self.id)
+        return f'<PasswordReset {self.id}>'
 
 
 class Notification(db.Model):
@@ -297,4 +294,4 @@ class Notification(db.Model):
                 raise
 
     def __repr__(self):
-        return '<Notification {}>'.format(self.id)
+        return f'<Notification {self.id}>'

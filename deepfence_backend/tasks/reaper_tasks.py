@@ -21,10 +21,7 @@ def update_deepfence_key_in_redis(*args):
         users = User.query.all()
         from config.redisconfig import redis
 
-        deepfence_key_map = {}
-        for user in users:
-            deepfence_key_map[user.api_key] = user.id
-        if deepfence_key_map:
+        if deepfence_key_map := {user.api_key: user.id for user in users}:
             redis.hset(DEEPFENCE_KEY, mapping=deepfence_key_map)
 
 

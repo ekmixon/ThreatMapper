@@ -64,10 +64,7 @@ def hello():
 # this is for normal demos
 @app.route('/')
 def root():
-    # counter_future = pool.submit(do_redis)
-    # search_future = pool.submit(do_search)
-    result = do_echo(do_qotd())
-    return result
+    return do_echo(do_qotd())
 
 
 if __name__ == "__main__":

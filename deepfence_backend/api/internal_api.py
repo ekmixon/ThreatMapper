@@ -52,9 +52,8 @@ def delete_agent_logs():
     """
     payloads = request.json
     path = str(payloads.get("path", ""))
-    if path.startswith("/tmp/deepfence-logs"):
-        if os.path.isdir(path):
-            rmdir_recursive(path)
+    if path.startswith("/tmp/deepfence-logs") and os.path.isdir(path):
+        rmdir_recursive(path)
     return set_response(data="Ok")
 
 

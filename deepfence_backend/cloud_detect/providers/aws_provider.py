@@ -34,9 +34,11 @@ class AWSProvider(AbstractProvider):
             if response.status_code != 200:
                 return False
             response = response.json()
-            if response['imageId'].startswith('ami-') and response['instanceId'].startswith('i-'):
-                return True
-            return False
+            return bool(
+                response['imageId'].startswith('ami-')
+                and response['instanceId'].startswith('i-')
+            )
+
         except BaseException:
             return False
 

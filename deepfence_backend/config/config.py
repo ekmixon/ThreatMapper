@@ -3,18 +3,13 @@ import datetime
 from celery import Celery
 
 
+
+
 class ProdConfig:
     debug = os.environ.get("DEBUG")
-    DEBUG = False
-    if debug == "true" or debug == "True":
-        DEBUG = True
-    SQLALCHEMY_DATABASE_URI = 'postgresql://{}:{}@{}:{}/{}'.format(
-        os.environ.get("POSTGRES_USER_DB_USER"),
-        os.environ.get("POSTGRES_USER_DB_PASSWORD"),
-        os.environ.get("POSTGRES_USER_DB_HOST"),
-        os.environ.get("POSTGRES_USER_DB_PORT"),
-        os.environ.get("POSTGRES_USER_DB_NAME")
-    )
+    DEBUG = debug in ["true", "True"]
+    SQLALCHEMY_DATABASE_URI = f'postgresql://{os.environ.get("POSTGRES_USER_DB_USER")}:{os.environ.get("POSTGRES_USER_DB_PASSWORD")}@{os.environ.get("POSTGRES_USER_DB_HOST")}:{os.environ.get("POSTGRES_USER_DB_PORT")}/{os.environ.get("POSTGRES_USER_DB_NAME")}'
+
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_recycle': 300,
         'pool_timeout': 60,
@@ -38,6 +33,7 @@ class ProdConfig:
         port=os.environ.get("REDIS_PORT"),
         db_number=os.environ.get("REDIS_DB_NUMBER")
     )
+
 
 
 celery_app = Celery(__name__, broker=ProdConfig.CELERY_BROKER_URL)

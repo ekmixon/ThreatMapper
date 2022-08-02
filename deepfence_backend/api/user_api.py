@@ -116,9 +116,7 @@ def register():
 
     def _is_email_valid():
         users = User.query.filter_by(email=email).all()
-        if users:
-            return False
-        return True
+        return not users
 
     if not request.is_json:
         raise InvalidUsage("Missing JSON in request")
@@ -162,14 +160,15 @@ def register():
 
     if "http://" in console_url or "https://" in console_url:
         console_url = urlparse(console_url).netloc
-    if not (validate_ip(console_url) or validate_domain(console_url)):
+    if not validate_ip(console_url) and not validate_domain(console_url):
         raise InvalidUsage("Console URL is not valid")
     console_url_setting_val = {
-        "value": "https://" + console_url,
+        "value": f"https://{console_url}",
         "label": "Deepfence Console URL",
         "description": "Deepfence Console URL used for sending emails with links to the console",
         "is_visible_on_ui": True,
     }
+
     console_url_setting = Setting.query.filter_by(key="console_url").one_or_none()
     if console_url_setting:
         if not console_url_setting.value or not console_url_setting.value.get("value"):
@@ -313,11 +312,14 @@ def api_auth():
 
     no_of_users = db.session.query(func.count(User.id)).scalar()
     if no_of_users == 0:
-        raise NotFound("user with api_key {} not found.\n Note: This is a fresh installation.".format(api_key))
+        raise NotFound(
+            f"user with api_key {api_key} not found.\n Note: This is a fresh installation."
+        )
+
 
     user = User.query.filter_by(api_key=api_key, isActive=True).first()
     if not user:
-        raise NotFound("user with api_key {} not found".format(api_key))
+        raise NotFound(f"user with api_key {api_key} not found")
 
     access_token = create_access_token(identity=user.get_identity())
     refresh_token = create_refresh_token(identity=user.get_identity())
@@ -482,10 +484,10 @@ def user_update(user_id):
     if user_id == current_user["id"]:
         user = current_user_obj
         same_user = True
-    else:
-        if current_user_obj.role != admin_role:
-            raise InvalidUsage("User does not have permission to edit this user")
+    elif current_user_obj.role == admin_role:
         user = User.query.filter_by(id=user_id).one_or_none()
+    else:
+        raise InvalidUsage("User does not have permission to edit this user")
     if user is None:
         raise InvalidUsage("User not found")
     if type(request.json) != dict:
@@ -556,10 +558,10 @@ def user_delete(user_id):
     if user_id == current_user["id"]:
         user = current_user_obj
         to_logout = True
-    else:
-        if current_user_obj.role != admin_role:
-            raise InvalidUsage("User does not have permission to delete this user")
+    elif current_user_obj.role == admin_role:
         user = User.query.filter_by(id=user_id).one_or_none()
+    else:
+        raise InvalidUsage("User does not have permission to delete this user")
     if user is None:
         raise InvalidUsage("User not found")
     admin_user_count = User.query.filter_by(role=admin_role, isActive=True).count()
@@ -567,21 +569,18 @@ def user_delete(user_id):
         raise InvalidUsage("Cannot delete the last admin user")
     # Delete all foreign key references
     for db_obj in [UserActivityLog]:
-        db_rows = db_obj.query.filter_by(user_id=user_id).all()
-        if db_rows:
+        if db_rows := db_obj.query.filter_by(user_id=user_id).all():
             for db_row in db_rows:
                 db_row.delete()
     integration_ids = []
     for db_obj in [VulnerabilityNotification]:
-        db_rows = db_obj.query.filter_by(user_id=user_id).all()
-        if db_rows:
+        if db_rows := db_obj.query.filter_by(user_id=user_id).all():
             for db_row in db_rows:
                 if db_row.integration.id not in integration_ids:
                     integration_ids.append(db_row.integration.id)
                 db_row.delete()
     for integration_id in integration_ids:
-        integration = Integration.query.get(integration_id)
-        if integration:
+        if integration := Integration.query.get(integration_id):
             integration.delete()
     api_key = user.api_key
     # Delete user
@@ -592,7 +591,7 @@ def user_delete(user_id):
         access_expires = app.config["JWT_ACCESS_TOKEN_EXPIRES"]
         redis.set(jti, 'true', access_expires * 1.2)
     else:
-        redis.set("DELETED_USER_" + str(user_id), 'true')
+        redis.set(f"DELETED_USER_{str(user_id)}", 'true')
     return set_response(data="ok")
 
 
@@ -714,13 +713,15 @@ def login():
         raise Forbidden("Invalid username or password")
 
     user = User.query.filter_by(email=email, isActive=True).first()
-    if not user:
+    if (
+        not user
+        or user
+        and user.password_hash
+        and not user.check_password(password)
+    ):
         raise Forbidden("Invalid username or password")
     elif not user.password_hash:
         raise Forbidden("Cannot login")
-    elif not user.check_password(password):
-        raise Forbidden("Invalid username or password")
-
     access_token = create_access_token(identity=user.get_identity())
     refresh_token = create_refresh_token(identity=user.get_identity())
 
@@ -865,8 +866,7 @@ def send_invite():
     role = Role.query.filter_by(name=role_name).one_or_none()
     console_url = Setting.query.filter_by(key="console_url").one_or_none()
 
-    user = User.query.filter_by(email=email).one_or_none()
-    if user:
+    if user := User.query.filter_by(email=email).one_or_none():
         raise InvalidUsage("Email is already registered")
     if not console_url or not console_url.value or not console_url.value.get("value", None):
         raise InvalidUsage("Deepfence Console URL is not set in settings.")
@@ -886,7 +886,6 @@ def send_invite():
         # Scenario: user is deleted and user is invited again
         invite.accepted = False
         invite.created_at = datetime.datetime.now()
-        invite.save()
     else:
         random_code = secrets.token_hex(SECRET_TOKEN_LENGTH)
         invite = Invite(
@@ -896,8 +895,7 @@ def send_invite():
             company=admin_company,
             role=role
         )
-        invite.save()
-
+    invite.save()
     invite_accept_link = urllib.parse.urljoin(console_url.value["value"], INVITE_ACCEPT_LINK.format(code=random_code))
     subject = INVITE_USER_EMAIL_SUBJECT.format(company=admin_company.name)
     html = INVITE_USER_EMAIL_HTML.format(registration_url=invite_accept_link)
@@ -970,9 +968,7 @@ def accept_invite():
 
     def _is_email_valid():
         users = User.query.filter_by(email=email).all()
-        if users:
-            return False
-        return True
+        return not users
 
     if not request.is_json:
         raise InvalidUsage("Missing JSON in request")
@@ -1363,35 +1359,25 @@ class IntegrationView(MethodView):
                 response[notif.integration.integration_type].append(notif.pretty_print())
 
         for integration_type, notifications in response.items():
-            if integration_type == 'slack':
-                for i in range(len(notifications)):
-                    notifications[i]['webhook_url'] = mask_url(notifications[i]['webhook_url'], 'slack')
-            if integration_type == 'microsoft_teams':
-                for i in range(len(notifications)):
-                    notifications[i]['webhook_url'] = mask_url(notifications[i]['webhook_url'], 'microsoft_teams')
-            if integration_type == 'pagerduty':
-                for i in range(len(notifications)):
-                    notifications[i]['service_key'] = mask_api_key(notifications[i]['service_key'])
-                    notifications[i]['api_key'] = mask_api_key(notifications[i]['api_key'])
-            if integration_type == 'http_endpoint':
-                for i in range(len(notifications)):
+            for i in range(len(notifications)):
+                if integration_type in ['http_endpoint', 'google_chronicle']:
                     if notifications[i]['authorization_key'] != "":
                         notifications[i]['authorization_key'] = mask_api_key(notifications[i]['authorization_key'])
-            if integration_type == 'google_chronicle':
-                for i in range(len(notifications)):
-                    if notifications[i]['authorization_key'] != "":
-                        notifications[i]['authorization_key'] = mask_api_key(notifications[i]['authorization_key'])
-            if integration_type == 's3':
-                for i in range(len(notifications)):
-                    notifications[i]['aws_access_key'] = mask_api_key(notifications[i]['aws_access_key'])
-                    notifications[i]['aws_secret_key'] = mask_api_key(notifications[i]['aws_secret_key'])
-            if integration_type == 'sumo_logic':
-                for i in range(len(notifications)):
-                    notifications[i]['api_url'] = mask_url(notifications[i]['api_url'], 'sumo_logic')
-            if integration_type == 'jira':
-                for i in range(len(notifications)):
+                elif integration_type == 'jira':
                     notifications[i]['api_token'] = mask_api_key(notifications[i]['api_token'])
 
+                elif integration_type == 'microsoft_teams':
+                    notifications[i]['webhook_url'] = mask_url(notifications[i]['webhook_url'], 'microsoft_teams')
+                elif integration_type == 'pagerduty':
+                    notifications[i]['service_key'] = mask_api_key(notifications[i]['service_key'])
+                    notifications[i]['api_key'] = mask_api_key(notifications[i]['api_key'])
+                elif integration_type == 's3':
+                    notifications[i]['aws_access_key'] = mask_api_key(notifications[i]['aws_access_key'])
+                    notifications[i]['aws_secret_key'] = mask_api_key(notifications[i]['aws_secret_key'])
+                elif integration_type == 'slack':
+                    notifications[i]['webhook_url'] = mask_url(notifications[i]['webhook_url'], 'slack')
+                elif integration_type == 'sumo_logic':
+                    notifications[i]['api_url'] = mask_url(notifications[i]['api_url'], 'sumo_logic')
             response[integration_type] = sorted(notifications, key=lambda n: n["id"])
 
         return set_response(data=response)
@@ -1598,10 +1584,10 @@ class IntegrationView(MethodView):
         config = json.dumps({"service_key": service_key, "api_key": api_key})
         integration = Integration.query.filter_by(integration_type=INTEGRATION_TYPE_PAGERDUTY,
                                                   config=config).one_or_none()
-        # validation API_Token 
+        # validation API_Token
         try:
             session = APISession(api_key)
-            if len(list(session.iter_all('users'))) == 0:
+            if not list(session.iter_all('users')):
                 raise InvalidUsage("Looks like no user own this Authentication token provided")
 
             url = "https://api.pagerduty.com/services?include[]=integrations"
@@ -1616,17 +1602,16 @@ class IntegrationView(MethodView):
             integration_key = ""
             if response.status_code != 200:
                 raise InvalidUsage("Looks like no user own this Authentication token provided")
-            else:
-                for data in response.json()["services"]:
-                    if data["integrations"]:
-                        for integrations in data["integrations"]:
-                            if integrations.get("integration_key", ""):
-                                integration_key = integrations.get("integration_key", "")
-                                break
-                    if integration_key == service_key:
-                        break
-                if not integration_key or integration_key != service_key:
-                    raise InvalidUsage("Looks like integration key provided is not valid")
+            for data in response.json()["services"]:
+                if data["integrations"]:
+                    for integrations in data["integrations"]:
+                        if integrations.get("integration_key", ""):
+                            integration_key = integrations.get("integration_key", "")
+                            break
+                if integration_key == service_key:
+                    break
+            if not integration_key or integration_key != service_key:
+                raise InvalidUsage("Looks like integration key provided is not valid")
         except Exception as e:
             raise InvalidUsage(e)
 
@@ -1864,27 +1849,26 @@ class IntegrationView(MethodView):
             raise InvalidUsage(e.message)
 
         try:
-            if api_type == "event_collector":
-                if not token:
-                    raise InvalidUsage("HEC API Token is required")
-
-                # headers for the request
-                headers = {
-                    "Authorization": "Splunk {0}".format(token)
-                }
-
-                # we are sending empty payload for getting "event can not be black Error"
-                response = requests.post(api_url, data=json.dumps({'event': ""}), headers=headers, verify=False)
-                response_status_code = response.status_code
-                response_data = response.json()
-                if response_status_code == 400 and response_data['code'] == 13:
-                    pass
-                elif response_status_code == 403:
-                    raise InvalidUsage("Please check your HEC Token")
-                elif str(response_status_code).startswith('4'):
-                    raise InvalidUsage("There is a problem with Endpoint & Token combination you entered")
-            else:
+            if api_type != "event_collector":
                 raise InvalidUsage("Invalid api_type. It should be event_collector")
+            if not token:
+                raise InvalidUsage("HEC API Token is required")
+
+            # headers for the request
+            headers = {
+                "Authorization": "Splunk {0}".format(token)
+            }
+
+            # we are sending empty payload for getting "event can not be black Error"
+            response = requests.post(api_url, data=json.dumps({'event': ""}), headers=headers, verify=False)
+            response_status_code = response.status_code
+            response_data = response.json()
+            if response_status_code == 400 and response_data['code'] == 13:
+                pass
+            elif response_status_code == 403:
+                raise InvalidUsage("Please check your HEC Token")
+            elif str(response_status_code).startswith('4'):
+                raise InvalidUsage("There is a problem with Endpoint & Token combination you entered")
         except requests.exceptions.ConnectionError as error:
             # if there is a problem in endpoint then Connection error will be thrown
             raise InvalidUsage("Please check your endpoint URL")

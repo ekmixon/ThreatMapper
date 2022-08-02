@@ -20,14 +20,8 @@ def create_user_activity(current_user_id, action, event, resources=None, patch=N
             raise InvalidUsage("Role Invalid.")
 
         # converting None to empty string
-        if resources is None:
-            resources = ''
-        else:
-            resources = json.dumps(resources)
-        if patch is None:
-            patch = ''
-        else:
-            patch = json.dumps(patch)
+        resources = '' if resources is None else json.dumps(resources)
+        patch = '' if patch is None else json.dumps(patch)
         ual = UserActivityLog(
             action=action,
             event=event,
@@ -61,14 +55,8 @@ def create_user_activity_login(current_user_id, action, event, resources=None, p
             raise InvalidUsage("Role Invalid.")
 
         # converting None to empty string
-        if resources is None:
-            resources = ''
-        else:
-            resources = json.dumps(resources)
-        if patch is None:
-            patch = ''
-        else:
-            patch = json.dumps(patch)
+        resources = '' if resources is None else json.dumps(resources)
+        patch = '' if patch is None else json.dumps(patch)
         ual = UserActivityLog(
             action=action,
             event=event,

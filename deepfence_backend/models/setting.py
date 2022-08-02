@@ -33,5 +33,5 @@ class Setting(db.Model):
                 raise
 
     def __repr__(self):
-        return '<Setting {}>'.format(self.id)
+        return f'<Setting {self.id}>'
 

@@ -23,4 +23,4 @@ class DFCluster(db.Model):
                 raise
 
     def __repr__(self):
-        return "<DFCluster {}>".format(self.id)
+        return f"<DFCluster {self.id}>"

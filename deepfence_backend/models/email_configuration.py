@@ -47,4 +47,4 @@ class EmailConfiguration(db.Model):
         }
 
     def __repr__(self):
-        return "<EmailConf {}>".format(self.id)
+        return f"<EmailConf {self.id}>"

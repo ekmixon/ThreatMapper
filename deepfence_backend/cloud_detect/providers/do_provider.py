@@ -32,9 +32,7 @@ class DOProvider(AbstractProvider):
             response = requests.get(self.metadata_url)
             if response.status_code != 200:
                 return False
-            if response.json()['droplet_id'] > 0:
-                return True
-            return False
+            return response.json()['droplet_id'] > 0
         except BaseException:
             return False
 
@@ -44,7 +42,6 @@ class DOProvider(AbstractProvider):
         """
         self.logger.debug('Checking DO vendor file')
         do_path = Path(self.vendor_file)
-        if do_path.is_file():
-            if 'DigitalOcean' in open(self.vendor_file).read():
-                return True
-        return False
+        return bool(
+            do_path.is_file() and 'DigitalOcean' in open(self.vendor_file).read()
+        )

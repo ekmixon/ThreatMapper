@@ -85,4 +85,4 @@ class Scheduler(db.Model):
         }
 
     def __repr__(self):
-        return "<Scheduler {}>".format(self.id)
+        return f"<Scheduler {self.id}>"

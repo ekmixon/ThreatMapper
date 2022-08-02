@@ -62,4 +62,4 @@ class UserActivityLog(db.Model):
         }
 
     def __repr__(self):
-        return "<UserActivityLog {}>".format(self.id)
+        return f"<UserActivityLog {self.id}>"

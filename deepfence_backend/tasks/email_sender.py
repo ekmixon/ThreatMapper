@@ -130,8 +130,9 @@ def send_email(self, recipients, subject='', text='', html=''):
     # here we will choose which email to select to send depending up the information available
     with app.app_context():
         try:
-            email_configuration = EmailConfiguration.query.filter().first()
-            if email_configuration:
+            if (
+                email_configuration := EmailConfiguration.query.filter().first()
+            ):
                 if email_configuration.email_provider == "amazon_ses":
                     send_email_ses(email_configuration.email_config, recipients, subject, text, html)
                 elif email_configuration.email_provider == "smtp":
@@ -147,8 +148,9 @@ def send_email_with_attachment(recipients, attachment, attachment_file_name, att
                                subject='', html=''):
     with app.app_context():
         try:
-            email_configuration = EmailConfiguration.query.filter().first()
-            if email_configuration:
+            if (
+                email_configuration := EmailConfiguration.query.filter().first()
+            ):
                 if email_configuration.email_provider == "amazon_ses":
                     send_email_with_attachment_ses(email_configuration.email_config, recipients, attachment,
                                                    attachment_file_name, attachment_content_type, subject, html)

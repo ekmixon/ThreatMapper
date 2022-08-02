@@ -36,7 +36,7 @@ class Notification(db.Model):
         raise NotImplementedError("Implement this method in the subclasses.")
 
     @classmethod
-    def format_content(self, contents):
+    def format_content(cls, contents):
         """
         Override this method in the children. It should always take one argument `content`.
         """
@@ -117,7 +117,7 @@ class VulnerabilityNotification(Notification):
         self.integration.send(self.format_content(contents), summary="Deepfence - Vulnerabilities Subscription")
 
     def __repr__(self):
-        return "<VulnerabilityNotification {}>".format(self.id)
+        return f"<VulnerabilityNotification {self.id}>"
 
 
 class UserActivityNotification(Notification):
@@ -167,7 +167,7 @@ class UserActivityNotification(Notification):
                               notification_id=kwargs["notification_id"], resource_type="")
 
     def __repr__(self):
-        return "<UserActivityNotification {}>".format(self.id)
+        return f"<UserActivityNotification {self.id}>"
 
 
 class RunningNotification(db.Model):
@@ -188,7 +188,7 @@ class RunningNotification(db.Model):
         }
 
     def __repr__(self):
-        return "<RunningNotification {}>".format(self.source_application_id)
+        return f"<RunningNotification {self.source_application_id}>"
 
     def save(self, commit=True):
         db.session.add(self)

@@ -14,15 +14,17 @@ setting_api = Blueprint("setting_api", __name__)
 @jwt_required
 def settings():
     all_settings = Setting.query.filter(Setting.value['is_visible_on_ui'].as_boolean()).all()
-    result = []
-    for setting in all_settings:
-        result.append({
+    result = [
+        {
             "id": setting.id,
             "key": setting.key,
             "value": setting.value["value"],
             "label": setting.value["label"],
-            "description": setting.value["description"]
-        })
+            "description": setting.value["description"],
+        }
+        for setting in all_settings
+    ]
+
     return set_response(data=result)
 
 
@@ -80,7 +82,7 @@ def setting_update(setting_id):
             value = urlparse(value).netloc
         if not (validate_ip(value) or validate_domain(value)):
             raise InvalidUsage("URL is not valid")
-        value = "https://" + value
+        value = f"https://{value}"
 
     setting.value = {
         "value": value,

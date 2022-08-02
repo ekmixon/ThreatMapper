@@ -35,11 +35,16 @@ def scheduler(time=None):
 
 
 def is_notification_filters_set(filters):
-    if filters and (filters.get(FILTER_TYPE_HOST_NAME, []) or filters.get(FILTER_TYPE_IMAGE_NAME, []) or
-                    filters.get(FILTER_TYPE_KUBE_CLUSTER_NAME, []) or filters.get(FILTER_TYPE_KUBE_NAMESPACE, []) or
-                    filters.get(FILTER_TYPE_TAGS, [])):
-        return True
-    return False
+    return bool(
+        filters
+        and (
+            filters.get(FILTER_TYPE_HOST_NAME, [])
+            or filters.get(FILTER_TYPE_IMAGE_NAME, [])
+            or filters.get(FILTER_TYPE_KUBE_CLUSTER_NAME, [])
+            or filters.get(FILTER_TYPE_KUBE_NAMESPACE, [])
+            or filters.get(FILTER_TYPE_TAGS, [])
+        )
+    )
 
 
 def get_k8s_cluster_name_namespace_for_pods(pod_ids, topology_pods):
@@ -56,67 +61,93 @@ def get_k8s_cluster_name_namespace_for_image(image_name, topology_data):
     pod_ids = []
     for node_id, container_details in topology_data[1].items():
         if container_details.get("image_name_with_tag", "") == image_name:
-            for parent in container_details.get("parents", []):
-                if parent["type"] == NODE_TYPE_POD:
-                    pod_ids.append(parent["id"])
+            pod_ids.extend(
+                parent["id"]
+                for parent in container_details.get("parents", [])
+                if parent["type"] == NODE_TYPE_POD
+            )
+
     if pod_ids:
         return get_k8s_cluster_name_namespace_for_pods(list(set(pod_ids)), topology_data[3])
     return [], []
 
 
 def filter_vulnerability_notification(filters, cve, topology_data):
-    if is_notification_filters_set(filters):
-        if filters.get(FILTER_TYPE_HOST_NAME, []):
-            if cve["cve_container_image"] == cve["host_name"]:
-                if cve["host_name"] in filters[FILTER_TYPE_HOST_NAME]:
-                    return True
-        if filters.get(FILTER_TYPE_IMAGE_NAME, []):
-            if cve["cve_container_image"] != cve["host_name"]:
-                if cve["cve_container_image"] in filters[FILTER_TYPE_IMAGE_NAME]:
-                    return True
-        if filters.get(FILTER_TYPE_IMAGE_NAME_WITH_TAG, []):
-            if cve["cve_container_image"] != cve["host_name"]:
-                if cve["cve_container_image"] in filters[FILTER_TYPE_IMAGE_NAME_WITH_TAG]:
-                    return True
-        if filters.get(FILTER_TYPE_KUBE_CLUSTER_NAME, []):
-            if cve["cve_container_image"] != cve["host_name"]:
-                k8s_cluster_names, k8s_namespaces = get_k8s_cluster_name_namespace_for_image(cve["cve_container_image"],
-                                                                                             topology_data)
-                if any(item in filters[FILTER_TYPE_KUBE_CLUSTER_NAME] for item in k8s_cluster_names):
-                    return True
-            else:
-                for node_id, pod_details in topology_data[3].items():
-                    if cve["host_name"] == pod_details.get("host_name", ""):
-                        if pod_details["kubernetes_cluster_name"] in filters[FILTER_TYPE_KUBE_CLUSTER_NAME]:
-                            return True
-        if filters.get(FILTER_TYPE_KUBE_NAMESPACE, []):
-            if cve["cve_container_image"] != cve["host_name"]:
-                k8s_cluster_names, k8s_namespaces = get_k8s_cluster_name_namespace_for_image(cve["cve_container_image"],
-                                                                                             topology_data)
-                if any(item in filters[FILTER_TYPE_KUBE_NAMESPACE] for item in k8s_namespaces):
-                    return True
-        if filters.get(FILTER_TYPE_TAGS, []):
-            if cve["cve_container_image"] == cve["host_name"]:
-                for node_id, host_details in topology_data[0].items():
-                    if cve["host_name"] == host_details.get("host_name", ""):
-                        if any(item in filters[FILTER_TYPE_TAGS] for item in host_details.get(USER_DEFINED_TAGS, [])):
-                            return True
-            if cve["cve_container_image"] != cve["host_name"]:
-                if cve.get("cve_container_name", "") and cve["cve_container_name"] != cve["host_name"]:
-                    for node_id, container_details in topology_data[1].items():
-                        if cve["cve_container_name"] == container_details.get("name", ""):
-                            if any(item in filters[FILTER_TYPE_TAGS] for item in
-                                   container_details.get(USER_DEFINED_TAGS, [])):
-                                return True
-                else:
-                    for node_id, image_details in topology_data[2].items():
-                        if cve["cve_container_image"] == image_details.get("name", ""):
-                            if any(item in filters[FILTER_TYPE_TAGS] for item in
-                                   image_details.get(USER_DEFINED_TAGS, [])):
-                                return True
-        return False
-    else:
+    if not is_notification_filters_set(filters):
         return True
+    if (
+        filters.get(FILTER_TYPE_HOST_NAME, [])
+        and cve["cve_container_image"] == cve["host_name"]
+        and cve["host_name"] in filters[FILTER_TYPE_HOST_NAME]
+    ):
+        return True
+    if (
+        filters.get(FILTER_TYPE_IMAGE_NAME, [])
+        and cve["cve_container_image"] != cve["host_name"]
+        and cve["cve_container_image"] in filters[FILTER_TYPE_IMAGE_NAME]
+    ):
+        return True
+    if (
+        filters.get(FILTER_TYPE_IMAGE_NAME_WITH_TAG, [])
+        and cve["cve_container_image"] != cve["host_name"]
+        and cve["cve_container_image"]
+        in filters[FILTER_TYPE_IMAGE_NAME_WITH_TAG]
+    ):
+        return True
+    if filters.get(FILTER_TYPE_KUBE_CLUSTER_NAME, []):
+        if cve["cve_container_image"] != cve["host_name"]:
+            k8s_cluster_names, k8s_namespaces = get_k8s_cluster_name_namespace_for_image(cve["cve_container_image"],
+                                                                                         topology_data)
+            if any(item in filters[FILTER_TYPE_KUBE_CLUSTER_NAME] for item in k8s_cluster_names):
+                return True
+        else:
+            for node_id, pod_details in topology_data[3].items():
+                if (
+                    cve["host_name"] == pod_details.get("host_name", "")
+                    and pod_details["kubernetes_cluster_name"]
+                    in filters[FILTER_TYPE_KUBE_CLUSTER_NAME]
+                ):
+                    return True
+    if (
+        filters.get(FILTER_TYPE_KUBE_NAMESPACE, [])
+        and cve["cve_container_image"] != cve["host_name"]
+    ):
+        k8s_cluster_names, k8s_namespaces = get_k8s_cluster_name_namespace_for_image(cve["cve_container_image"],
+                                                                                     topology_data)
+        if any(item in filters[FILTER_TYPE_KUBE_NAMESPACE] for item in k8s_namespaces):
+            return True
+    if filters.get(FILTER_TYPE_TAGS, []):
+        if cve["cve_container_image"] == cve["host_name"]:
+            for node_id, host_details in topology_data[0].items():
+                if cve["host_name"] == host_details.get(
+                    "host_name", ""
+                ) and any(
+                    item in filters[FILTER_TYPE_TAGS]
+                    for item in host_details.get(USER_DEFINED_TAGS, [])
+                ):
+                    return True
+        if cve["cve_container_image"] != cve["host_name"]:
+            if cve.get("cve_container_name", "") and cve["cve_container_name"] != cve["host_name"]:
+                for node_id, container_details in topology_data[1].items():
+                    if cve["cve_container_name"] == container_details.get(
+                        "name", ""
+                    ) and any(
+                        item in filters[FILTER_TYPE_TAGS]
+                        for item in container_details.get(
+                            USER_DEFINED_TAGS, []
+                        )
+                    ):
+                        return True
+            else:
+                for node_id, image_details in topology_data[2].items():
+                    if cve["cve_container_image"] == image_details.get(
+                        "name", ""
+                    ) and any(
+                        item in filters[FILTER_TYPE_TAGS]
+                        for item in image_details.get(USER_DEFINED_TAGS, [])
+                    ):
+                        return True
+    return False
 
 
 def user_activity_digest(time, notification_id):
@@ -130,7 +161,7 @@ def user_activity_digest(time, notification_id):
         new_cursor_id = None
         notification = UserActivityNotification.query.get(notification_id)
         if not notification:
-            app.logger.debug("No integration found with id [{}]".format(notification_id))
+            app.logger.debug(f"No integration found with id [{notification_id}]")
             return
         # get data from postgres
         response = []
@@ -158,8 +189,9 @@ def save_integrations_status(notification_id, resource_type, msg):
         notification_obj = VulnerabilityNotification
     else:
         return
-    event = notification_obj.query.filter_by(id=notification_id).one_or_none()
-    if event:
+    if event := notification_obj.query.filter_by(
+        id=notification_id
+    ).one_or_none():
         event.error_msg = str(msg)
         try:
             event.save()
@@ -177,12 +209,13 @@ def send_slack_notification(self, slack_conf, payload, notification_id, resource
                 save_integrations_status(notification_id, resource_type, "")
             else:
                 error_text = response.text
-                app.logger.error("Error sending slack notification [{}]".format(error_text))
+                app.logger.error(f"Error sending slack notification [{error_text}]")
                 save_integrations_status(notification_id, resource_type, "Error in Slack: {0}".format(error_text))
         except Exception as exc:
             save_integrations_status(notification_id, resource_type, exc)
             app.logger.error(
-                "Slack notification failed. webhook: [{}], error: [{}]".format(slack_conf["webhook_url"], exc))
+                f'Slack notification failed. webhook: [{slack_conf["webhook_url"]}], error: [{exc}]'
+            )
 
 
 @celery_app.task(bind=True, default_retry_delay=1 * 60)
@@ -229,7 +262,10 @@ def create_splunk_event(self, splunk_conf, payloads, notification_id, resource_t
                                              "Sending data to splunk failed, we received text:{0} and response status {1}".format(
                                                  response['text'], status))
         except Exception as exc:
-            app.logger.error("Splunk notification failed. api: [{}], error: [{}]".format(splunk_conf["api_url"], exc))
+            app.logger.error(
+                f'Splunk notification failed. api: [{splunk_conf["api_url"]}], error: [{exc}]'
+            )
+
             save_integrations_status(notification_id, resource_type, exc)
 
 
@@ -269,7 +305,7 @@ def create_pagerduty_event(self, pagerduty_conf, alert_level, payload, summary, 
             })
             save_integrations_status(notification_id, resource_type, "")
         except Exception as exc:
-            app.logger.error("Pager duty notification failed. Error: [{}]".format(exc))
+            app.logger.error(f"Pager duty notification failed. Error: [{exc}]")
             save_integrations_status(notification_id, resource_type, "Error in Pager duty: {0}".format(exc))
 
 
@@ -282,7 +318,9 @@ def send_sumo_logic_notification(self, sumo_logic_conf, payload, notification_id
                 save_integrations_status(notification_id, resource_type, "")
             except Exception as exc:
                 app.logger.error(
-                    "Sumo Logic notification failed. room:[{}], error:[{}]".format(sumo_logic_conf["api_url"], exc))
+                    f'Sumo Logic notification failed. room:[{sumo_logic_conf["api_url"]}], error:[{exc}]'
+                )
+
                 save_integrations_status(notification_id, resource_type, "Error in Sumo Logic: {0}".format(exc))
 
 
@@ -290,23 +328,32 @@ def send_sumo_logic_notification(self, sumo_logic_conf, payload, notification_id
 def send_jira_notification(self, config, payloads, notification_id, resource_type, prefix=None):
     with app.app_context():
         try:
-            if not config.get('api_token'):
-                jclient = JIRA(config.get('jira_site_url'), auth=(config.get('username'), config.get('password')))
-            else:
-                jclient = JIRA(config.get('jira_site_url'),
-                               basic_auth=(config.get('username'), config.get('api_token')))
+            jclient = (
+                JIRA(
+                    config.get('jira_site_url'),
+                    basic_auth=(
+                        config.get('username'),
+                        config.get('api_token'),
+                    ),
+                )
+                if config.get('api_token')
+                else JIRA(
+                    config.get('jira_site_url'),
+                    auth=(config.get('username'), config.get('password')),
+                )
+            )
+
             index = 1
             gmt = time.gmtime()
             ts = calendar.timegm(gmt)
             for payload in payloads:
                 if prefix is None:
                     summary = "Deepfence Notification"
+                elif len(payloads) > 1:
+                    summary = "{0} {1} - Deepfence - {2} of {3}".format(ts, prefix, index, len(payloads))
+                    index += 1
                 else:
-                    if len(payloads) > 1:
-                        summary = "{0} {1} - Deepfence - {2} of {3}".format(ts, prefix, index, len(payloads))
-                        index += 1
-                    else:
-                        summary = "{0} {1} - Deepfence".format(ts, prefix)
+                    summary = "{0} {1} - Deepfence".format(ts, prefix)
                 jclient.create_issue(project=config.get('jira_project_key'),
                                      summary=summary,
                                      description=payload,
@@ -316,7 +363,10 @@ def send_jira_notification(self, config, payloads, notification_id, resource_typ
             save_integrations_status(notification_id, resource_type, e)
         except Exception as exc:
             save_integrations_status(notification_id, resource_type, "Error in Jira: {0}".format(exc))
-            app.logger.error("Jira notification failed. Site:[{}], error:[{}]".format(config.get("jira_site_url"), exc))
+            app.logger.error(
+                f'Jira notification failed. Site:[{config.get("jira_site_url")}], error:[{exc}]'
+            )
+
         else:
             save_integrations_status(notification_id, resource_type, "")
 
@@ -336,7 +386,9 @@ def send_http_endpoint_notification(self, http_endpoint_conf, payload, notificat
                 save_integrations_status(notification_id, resource_type, response.text)
         except Exception as exc:
             app.logger.error(
-                "HTTP Endpoint notification failed. url:[{}], error:[{}]".format(http_endpoint_conf["api_url"], exc))
+                f'HTTP Endpoint notification failed. url:[{http_endpoint_conf["api_url"]}], error:[{exc}]'
+            )
+
             save_integrations_status(notification_id, resource_type, "Error in HTTP endpoint: {0}".format(exc))
 
 
@@ -355,8 +407,9 @@ def send_google_chronicle_notification(self, chronicle_endpoint_conf, payload, n
                 save_integrations_status(notification_id, resource_type, response.text)
         except Exception as exc:
             app.logger.error(
-                "HTTP Endpoint notification failed. url:[{}], error:[{}]".format(chronicle_endpoint_conf["api_url"],
-                                                                                 exc))
+                f'HTTP Endpoint notification failed. url:[{chronicle_endpoint_conf["api_url"]}], error:[{exc}]'
+            )
+
             save_integrations_status(notification_id, resource_type, "Error in HTTP endpoint: {0}".format(exc))
 
 
@@ -374,7 +427,7 @@ def send_notification_to_es(self, es_conf, payloads, notification_id, resource_t
             requests.post(es_conf["es_url"] + "/_bulk", headers=headers, verify=False, data=bulk_query)
             save_integrations_status(notification_id, resource_type, "")
         except Exception as exc:
-            app.logger.error("Elasticsearch notification failed, error:[{}]".format(exc))
+            app.logger.error(f"Elasticsearch notification failed, error:[{exc}]")
             save_integrations_status(notification_id, resource_type, "Error in Elasticsearch: {0}".format(exc))
 
 
@@ -391,7 +444,7 @@ def send_notification_to_s3(self, s3_conf, payload, notification_id, resource_ty
                                  Body=json.dumps(payload), ContentType='application/json')
             save_integrations_status(notification_id, resource_type, "")
         except Exception as exc:
-            app.logger.error("S3 notification failed, error:[{}]".format(exc))
+            app.logger.error(f"S3 notification failed, error:[{exc}]")
             save_integrations_status(notification_id, resource_type, "Error in S3: {0}".format(exc))
 
 
@@ -411,10 +464,11 @@ def send_microsoft_teams_notification(self, team_conf, payloads, notification_id
                     save_integrations_status(notification_id, resource_type, "")
                 else:
                     error_text = response.text
-                    app.logger.error("Error sending Microsoft Teams notification [{}]".format(error_text))
+                    app.logger.error(f"Error sending Microsoft Teams notification [{error_text}]")
                     save_integrations_status(notification_id, resource_type,
                                              "Error in Microsoft Teams: {0}".format(error_text))
         except Exception as exc:
             save_integrations_status(notification_id, resource_type, "Error in Microsoft Teams: {0}".format(exc))
             app.logger.error(
-                "Microsoft Teams notification failed. webhook: [{}], error: [{}]".format(team_conf["webhook_url"], exc))
+                f'Microsoft Teams notification failed. webhook: [{team_conf["webhook_url"]}], error: [{exc}]'
+            )

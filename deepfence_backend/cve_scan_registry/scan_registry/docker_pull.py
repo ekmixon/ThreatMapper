@@ -12,20 +12,23 @@ urllib3.disable_warnings()
 
 # Get Docker token (this function is useless for unauthenticated registries like Microsoft)
 def get_auth_head(type, auth_url, reg_service, repository):
-	resp = requests.get('{}?service={}&scope=repository:{}:pull'.format(auth_url, reg_service, repository), verify=False)
+	resp = requests.get(
+		f'{auth_url}?service={reg_service}&scope=repository:{repository}:pull',
+		verify=False,
+	)
+
 	access_token = resp.json()['token']
-	auth_head = {'Authorization':'Bearer '+ access_token, 'Accept': type}
-	return auth_head
+	return {'Authorization': f'Bearer {access_token}', 'Accept': type}
 
 # Docker style progress bar
 def progress_bar(ublob, nb_traits):
 	sys.stdout.write('\r' + ublob[7:19] + ': Downloading [')
-	for i in range(0, nb_traits):
+	for i in range(nb_traits):
 		if i == nb_traits - 1:
 			sys.stdout.write('>')
 		else:
 			sys.stdout.write('=')
-	for i in range(0, 49 - nb_traits):
+	for _ in range(49 - nb_traits):
 		sys.stdout.write(' ')
 	sys.stdout.write(']')
 	sys.stdout.flush()

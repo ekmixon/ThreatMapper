@@ -26,7 +26,7 @@ _ERROR_ILLEGAL_ARGS = 64
 
 def _usage(error_message=None):
     if error_message:
-        stderr.write('ERROR: ' + error_message + linesep)
+        stderr.write(f'ERROR: {error_message}{linesep}')
     stdout.write(
         linesep.join([
             'Usage:', '    cross_versions.py [OPTION]...', 'Examples:',
@@ -53,12 +53,9 @@ def _validate_input(argv):
             if opt in ('-r', '--rc'):
                 config['rc'] = True
         if len(args) != 0:
-            raise ValueError('Unsupported argument(s): %s.' % args)
+            raise ValueError(f'Unsupported argument(s): {args}.')
         return config
-    except GetoptError as e:
-        _usage(str(e))
-        exit(_ERROR_ILLEGAL_ARGS)
-    except ValueError as e:
+    except (GetoptError, ValueError) as e:
         _usage(str(e))
         exit(_ERROR_ILLEGAL_ARGS)
 
@@ -83,7 +80,7 @@ def main(argv):
         print(linesep.join('\t'.join(triple)
                            for triple in cross_versions(config)))
     except Exception as e:
-        print(str(e))
+        print(e)
         exit(_ERROR_RUNTIME)
 
 

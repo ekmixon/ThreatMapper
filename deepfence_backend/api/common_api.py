@@ -42,7 +42,7 @@ def topology_metrics():
     if not count:
         count = {}
     total_hosts = int(count.get(NODE_TYPE_HOST, 0))
-    unprotected_hosts = int(count.get(NODE_TYPE_HOST + "_unprotected", 0))
+    unprotected_hosts = int(count.get(f"{NODE_TYPE_HOST}_unprotected", 0))
     response = {
         "coverage": {
             "discovered": str(total_hosts),
@@ -122,7 +122,7 @@ def stats():
         except ValueError:
             raise InvalidUsage("Number should be an integer value.")
 
-    if bool(number is not None) ^ bool(time_unit):
+    if (number is not None) ^ bool(time_unit):
         raise InvalidUsage("Require both number and time_unit or ignore both of them.")
 
     if time_unit and time_unit not in TIME_UNIT_MAPPING.keys():
@@ -152,7 +152,7 @@ def stats():
     for i in range(len(severities)):
         severity_total = responses[i].get("hits", {}).get("total", {}).get("value", 0)
         severity_counts[severities[i]] = severity_total
-        if severities[i] != "info" and severities[i] != "low":
+        if severities[i] not in ["info", "low"]:
             total_alerts_count += severity_total
 
     result = {
@@ -278,7 +278,7 @@ def search():
         except ValueError:
             raise InvalidUsage("Number should be an integer value.")
 
-    if bool(number is not None) ^ bool(time_unit):
+    if (number is not None) ^ bool(time_unit):
         raise InvalidUsage("Require both number and time_unit or ignore both of them.")
 
     if time_unit and time_unit not in TIME_UNIT_MAPPING.keys():
@@ -313,7 +313,7 @@ def search():
     if from_arg < 0:
         raise InvalidUsage("From parameter should be a positive integer value.")
     if (from_arg + size_arg) > max_result_window:
-        raise InvalidUsage("FROM + SIZE cannot exceed {}".format(max_result_window))
+        raise InvalidUsage(f"FROM + SIZE cannot exceed {max_result_window}")
 
     if not request.is_json:
         raise InvalidUsage("Missing JSON in request")
@@ -330,19 +330,14 @@ def search():
     _source = request.json.get("_source", [])
 
     if index_name not in ALL_INDICES:
-        raise InvalidUsage("_type should be one of {}".format(ALL_INDICES))
+        raise InvalidUsage(f"_type should be one of {ALL_INDICES}")
 
-    node_filters = request.json.get("node_filters", {})
-    if node_filters:
+    if node_filters := request.json.get("node_filters", {}):
         if index_name == CVE_INDEX:
-            tmp_filters = filter_node_for_vulnerabilities(node_filters)
-            if tmp_filters:
+            if tmp_filters := filter_node_for_vulnerabilities(node_filters):
                 filters = {**filters, **tmp_filters}
     scripted_sort = None
-    severity_sort = False
-    if index_name == CVE_INDEX:
-        if sort_by == "cve_severity":
-            severity_sort = True
+    severity_sort = index_name == CVE_INDEX and sort_by == "cve_severity"
     if severity_sort:
         scripted_sort = [
             {
@@ -391,10 +386,12 @@ def search():
 
         for key, value in values_for_buckets.items():
             value_buckets = value.get("buckets", [])
-            value_array = []
-            for value_bucket in value_buckets:
-                if value_bucket["doc_count"] > 0:
-                    value_array.append(value_bucket["key"])
+            value_array = [
+                value_bucket["key"]
+                for value_bucket in value_buckets
+                if value_bucket["doc_count"] > 0
+            ]
+
             values_for_response[key] = value_array
 
     # Add max_result_window to the response.
@@ -420,7 +417,7 @@ def search_corelation():
         except ValueError:
             raise InvalidUsage("Number should be an integer value.")
 
-    if bool(number is not None) ^ bool(time_unit):
+    if (number is not None) ^ bool(time_unit):
         raise InvalidUsage("Require both number and time_unit or ignore both of them.")
 
     if time_unit and time_unit not in TIME_UNIT_MAPPING.keys():
@@ -455,7 +452,7 @@ def search_corelation():
     if from_arg < 0:
         raise InvalidUsage("From parameter should be a positive integer value.")
     if (from_arg + size_arg) > max_result_window:
-        raise InvalidUsage("FROM + SIZE cannot exceed {}".format(max_result_window))
+        raise InvalidUsage(f"FROM + SIZE cannot exceed {max_result_window}")
 
     if not request.is_json:
         raise InvalidUsage("Missing JSON in request")
@@ -472,13 +469,11 @@ def search_corelation():
     _source = request.json.get("_source", [])
 
     if index_name not in ALL_INDICES:
-        raise InvalidUsage("_type should be one of {}".format(ALL_INDICES))
+        raise InvalidUsage(f"_type should be one of {ALL_INDICES}")
 
-    node_filters = request.json.get("node_filters", {})
-    if node_filters:
+    if node_filters := request.json.get("node_filters", {}):
         if index_name == CVE_INDEX:
-            tmp_filters = filter_node_for_vulnerabilities(node_filters)
-            if tmp_filters:
+            if tmp_filters := filter_node_for_vulnerabilities(node_filters):
                 filters = {**filters, **tmp_filters}
 
     search_response = ESConn.search_by_and_clause(
@@ -514,10 +509,12 @@ def search_corelation():
 
         for key, value in values_for_buckets.items():
             value_buckets = value.get("buckets", [])
-            value_array = []
-            for value_bucket in value_buckets:
-                if value_bucket["doc_count"] > 0:
-                    value_array.append(value_bucket["key"])
+            value_array = [
+                value_bucket["key"]
+                for value_bucket in value_buckets
+                if value_bucket["doc_count"] > 0
+            ]
+
             values_for_response[key] = value_array
 
     # Add max_result_window to the response.
@@ -529,8 +526,7 @@ def search_corelation():
     severity_list = []
     for hit in search_response.get("hits", []):
         if len(data["children"]) == 0:
-            child = {}
-            child["name"] = hit.get("_source", {}).get("severity", "")
+            child = {"name": hit.get("_source", {}).get("severity", "")}
             severity_list.append(hit.get("_source", {}).get("severity", ""))
             child["value"] = 1
             child["children"] = [{"name": hit.get("_source", {}).get("classtype", ""), "value": 1}]
@@ -538,8 +534,7 @@ def search_corelation():
         else:
             for datum in data["children"]:
                 if hit.get("_source", {}).get("severity", "") not in severity_list:
-                    child = {}
-                    child["name"] = hit.get("_source", {}).get("severity", "")
+                    child = {"name": hit.get("_source", {}).get("severity", "")}
                     severity_list.append(hit.get("_source", {}).get("severity", ""))
                     child["value"] = 1
                     child["children"] = [{"name": hit.get("_source", {}).get("classtype", ""), "value": 1}]
@@ -547,9 +542,7 @@ def search_corelation():
                     break
                 if hit.get("_source", {}).get("severity", "") == datum.get("name"):
                     if len(datum.get("children", [])) == 0:
-                        sub_child = {}
-                        sub_child["name"] = hit.get("_source", {}).get("classtype", "")
-                        sub_child["value"] = 1
+                        sub_child = {"name": hit.get("_source", {}).get("classtype", ""), "value": 1}
                         datum["children"].append(sub_child)
                         break
                     else:
@@ -561,9 +554,7 @@ def search_corelation():
                                 break
 
                         if found != True:
-                            sub_child = {}
-                            sub_child["name"] = hit.get("_source", {}).get("classtype", "")
-                            sub_child["value"] = 1
+                            sub_child = {"name": hit.get("_source", {}).get("classtype", ""), "value": 1}
                             datum["children"].append(sub_child)
                             break
     return set_response(data=data)
@@ -633,8 +624,7 @@ def unmask_doc():
         raise InvalidUsage("Request data invalid")
     docs_to_be_unmasked = request.json.get("docs")
 
-    cve_id_list = request.json.get("cve_id_list")
-    if cve_id_list:
+    if cve_id_list := request.json.get("cve_id_list"):
         if not docs_to_be_unmasked:
             docs_to_be_unmasked = []
         filters = {'cve_id': cve_id_list, 'masked': 'true'}
@@ -660,10 +650,12 @@ def unmask_doc():
         unmask_across_images = request.json.get("unmask_across_images", False)
         resp = ESConn.mget(body={"docs": cve_docs_to_be_unmasked}, _source=["cve_id", "cve_container_image"])
         if unmask_across_images:
-            cve_id_list = []
-            for es_doc in resp:
-                if es_doc.get("_source", {}).get("cve_id", ""):
-                    cve_id_list.append(es_doc["_source"]["cve_id"])
+            cve_id_list = [
+                es_doc["_source"]["cve_id"]
+                for es_doc in resp
+                if es_doc.get("_source", {}).get("cve_id", "")
+            ]
+
             filters = {"cve_id": cve_id_list, "masked": "true"}
             es_resp = ESConn.search_by_and_clause(CVE_INDEX, filters, 0, size=49999, _source=["_id"])
             all_docs_to_be_unmasked.extend(es_resp.get("hits", []))
@@ -674,12 +666,34 @@ def unmask_doc():
                     image_cve_id_list[es_doc["_source"]["cve_container_image"]].append(es_doc["_source"]["cve_id"])
             search_queries = []
             for image_name, cve_id_list in image_cve_id_list.items():
-                search_queries.append({"index": CVE_INDEX})
-                search_queries.append({
-                    "query": {"bool": {"must": [
-                        {"term": {"cve_container_image.keyword": image_name}},
-                        {"term": {"masked.keyword": "true"}}, {"terms": {"cve_id.keyword": cve_id_list}}]}},
-                    "from": 0, "size": 49999, "_source": ["_id"]})
+                search_queries.extend(
+                    (
+                        {"index": CVE_INDEX},
+                        {
+                            "query": {
+                                "bool": {
+                                    "must": [
+                                        {
+                                            "term": {
+                                                "cve_container_image.keyword": image_name
+                                            }
+                                        },
+                                        {"term": {"masked.keyword": "true"}},
+                                        {
+                                            "terms": {
+                                                "cve_id.keyword": cve_id_list
+                                            }
+                                        },
+                                    ]
+                                }
+                            },
+                            "from": 0,
+                            "size": 49999,
+                            "_source": ["_id"],
+                        },
+                    )
+                )
+
             if search_queries:
                 responses = ESConn.msearch(search_queries).get("responses", [])
                 for msearch_resp in responses:
@@ -759,8 +773,7 @@ def mask_doc():
         raise InvalidUsage("Request data invalid")
     docs_to_be_masked = request.json.get("docs")
 
-    cve_id_list = request.json.get("cve_id_list")
-    if cve_id_list:
+    if cve_id_list := request.json.get("cve_id_list"):
         if not docs_to_be_masked:
             docs_to_be_masked = []
         filters = {'cve_id': cve_id_list, 'masked': 'false'}
@@ -787,10 +800,12 @@ def mask_doc():
         mask_across_images = request.json.get("mask_across_images", False)
         resp = ESConn.mget(body={"docs": cve_docs_to_be_masked}, _source=["cve_id", "cve_container_image"])
         if mask_across_images:
-            cve_id_list = []
-            for es_doc in resp:
-                if es_doc.get("_source", {}).get("cve_id", ""):
-                    cve_id_list.append(es_doc["_source"]["cve_id"])
+            cve_id_list = [
+                es_doc["_source"]["cve_id"]
+                for es_doc in resp
+                if es_doc.get("_source", {}).get("cve_id", "")
+            ]
+
             filters = {"cve_id": cve_id_list, "masked": "false"}
             es_resp = ESConn.search_by_and_clause(CVE_INDEX, filters, 0, size=49999, _source=["_id"])
             all_docs_to_be_masked.extend(es_resp.get("hits", []))
@@ -801,12 +816,34 @@ def mask_doc():
                     image_cve_id_list[es_doc["_source"]["cve_container_image"]].append(es_doc["_source"]["cve_id"])
             search_queries = []
             for image_name, cve_id_list in image_cve_id_list.items():
-                search_queries.append({"index": CVE_INDEX})
-                search_queries.append({
-                    "query": {"bool": {"must": [
-                        {"term": {"cve_container_image.keyword": image_name}},
-                        {"term": {"masked.keyword": "false"}}, {"terms": {"cve_id.keyword": cve_id_list}}]}},
-                    "from": 0, "size": 49999, "_source": ["_id"]})
+                search_queries.extend(
+                    (
+                        {"index": CVE_INDEX},
+                        {
+                            "query": {
+                                "bool": {
+                                    "must": [
+                                        {
+                                            "term": {
+                                                "cve_container_image.keyword": image_name
+                                            }
+                                        },
+                                        {"term": {"masked.keyword": "false"}},
+                                        {
+                                            "terms": {
+                                                "cve_id.keyword": cve_id_list
+                                            }
+                                        },
+                                    ]
+                                }
+                            },
+                            "from": 0,
+                            "size": 49999,
+                            "_source": ["_id"],
+                        },
+                    )
+                )
+
             if search_queries:
                 responses = ESConn.msearch(search_queries).get("responses", [])
                 for msearch_resp in responses:
